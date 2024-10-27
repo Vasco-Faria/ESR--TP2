@@ -5,6 +5,9 @@ import socket, threading, sys, traceback, os
 
 from RtpPacket import RtpPacket
 
+import cv2
+import numpy as np
+
 CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
 
@@ -91,6 +94,8 @@ class Client:
 	
 	def listenRtp(self):		
 		"""Listen for RTP packets."""
+		frame_data = b'' #Buffer to store the frame data
+
 		while True:
 			try:
 				data = self.rtpSocket.recv(20480)
@@ -130,7 +135,7 @@ class Client:
 		photo = ImageTk.PhotoImage(Image.open(imageFile))
 		self.label.configure(image = photo, height=288) 
 		self.label.image = photo
-		
+
 	def connectToServer(self):
 		"""Connect to the Server. Start a new RTSP/TCP session."""
 		self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

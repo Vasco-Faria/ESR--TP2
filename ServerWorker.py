@@ -3,6 +3,8 @@ import sys, traceback, threading, socket
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
+import time
+import cv2
 
 class ServerWorker:
 	SETUP = 'SETUP'
@@ -19,6 +21,8 @@ class ServerWorker:
 	OK_200 = 0
 	FILE_NOT_FOUND_404 = 1
 	CON_ERR_500 = 2
+
+	PACKET_SIZE = 14000
 	
 	clientInfo = {}
  
@@ -26,7 +30,8 @@ class ServerWorker:
 	
 	def __init__(self, clientInfo,filename):
 		self.clientInfo = clientInfo
-		self.filename=filename
+		self.filename = filename
+		self.videoStream = VideoStream(filename)
 			
 	def run(self):
 		threading.Thread(target=self.recvRtspRequest).start()
@@ -58,7 +63,7 @@ class ServerWorker:
 				print("processing SETUP\n")
 				
 				try:
-					self.clientInfo['videoStream'] = VideoStream(self.filename)
+					#self.clientInfo['videoStream'] = VideoStream(self.filename)
 					print("Video a enviar: ", self.filename)
 					self.state = self.READY
 				except IOError:
@@ -112,34 +117,47 @@ class ServerWorker:
 			
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
+		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
+		fps = self.videoStream.cap.get(cv2.CAP_PROP_FPS)
+		delay = 1 / fps # Delay between sending each frame based on video frame rate
+
 		while True:
 			self.clientInfo['event'].wait(0.05) 
 			
 			# Stop sending if request is PAUSE or TEARDOWN
 			if self.clientInfo['event'].isSet(): 
 				break 
-			print(self.clientInfo)
-			data = self.clientInfo['videoStream'].nextFrame()
+			#print(self.clientInfo)
+			#data = self.clientInfo['videoStream'].nextFrame()
+			data = self.videoStream.nextFrame()
 			if data is not None and len(data) > 0: 
-				frameNumber = self.clientInfo['videoStream'].frameNbr()
+				#frameNumber = self.clientInfo['videoStream'].frameNbr()
+				frameNumber = self.videoStream.frameNbr()
 				try:
 					address = self.clientInfo['rtspSocket'][1][0]
 					port = int(self.clientInfo['rtpPort'])
-					self.clientInfo['rtpSocket'].sendto(self.makeRtp(data, frameNumber),(address,port))
+					print("Size of data: ", len(data))
+					
+					for i in range(0, len(data), self.PACKET_SIZE):
+						chunk = data[i:i+self.PACKET_SIZE]
+						print("Size of chunk: ", len(chunk))
+						self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
+					
+					#time.sleep(delay)
 				except:
 					print("Connection Error")
-					#print('-'*60)
-					#traceback.print_exc(file=sys.stdout)
-					#print('-'*60)
+					print('-'*60)
+					traceback.print_exc(file=sys.stdout)
+					print('-'*60)
 
-	def makeRtp(self, payload, frameNbr):
+	def makeRtp(self, payload, frameNbr, pt=96):
 		"""RTP-packetize the video data."""
 		version = 2
 		padding = 0
 		extension = 0
 		cc = 0
-		marker = 0
-		pt = 26 # MJPEG type
+		marker = 1 if len(payload) < self.PACKET_SIZE else 0
+		#pt = 26 # MJPEG type
 		seqnum = frameNbr
 		ssrc = 0 
 		

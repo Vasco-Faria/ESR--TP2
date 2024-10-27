@@ -63,6 +63,10 @@ class RtpPacket:
 	def getPacket(self):
 		"""Return RTP packet."""
 		return self.header + self.payload
+	
+	def getMarker(self):
+		"""Return value of marker bit."""
+		return (self.header[1] >> 7) & 0x01
 
 	def printheader(self):
 		print("[RTP Packet] Version: ...")
