@@ -32,11 +32,22 @@ class Overlay_Builder:
     def getOverlay(self):
         return self.overlay
     
+    def getNeighbours(self, host):
+        return self.getOverlay()['neighbours'][host]
+    
     def run(self):
         print("RUNNING SERVER")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            for oNode in self.overlay['neighbours']['self']:
-                #if oNode != 'self':
-                    print(f"In cycle oNode is {oNode}")
-                    s.connect((oNode, self.port))
-                    print(f"Connecting to {oNode}:{self.port}")
+            for neighbour_node in self.getNeighbours('self'):
+                try:
+                    print(f"Connecting to {neighbour_node}:{self.port}")
+                    s.connect((neighbour_node, self.port))
+                    neighbour_data = json.dumps({"neighbours": self.getNeighbours(neighbour_node)})
+                    s.sendall(neighbour_data.encode('utf-8'))
+                    print(f"Sent neighbours!")
+                
+                    log_data = s.recv(1024).decode('utf-8')
+                    print(f"Log: {log_data}")
+                    
+                except socket.error as e:
+                    print(f"Error connecting to {neighbour_node}: {e}")
