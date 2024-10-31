@@ -3,7 +3,7 @@ import json
 
 class Overlay_Builder: 
     def __init__(self, host='10.0.5.10', config_file='overlay.build.json', port=6010):
-        self.host = host
+        self.IP = host
         self.port = port
         self.config_file = config_file
         self.overlay = {}
@@ -23,7 +23,7 @@ class Overlay_Builder:
 
     def parse_config(self,data):
         for key in data: 
-            if key == self.host:
+            if key == self.IP:
                 self.overlay['neighbours']['self'] = data[key]
             else: 
                 self.overlay['neighbours'][key] = data[key]
@@ -33,17 +33,26 @@ class Overlay_Builder:
         return self.overlay
     
     def getNeighbours(self, host):
-        return self.getOverlay()['neighbours'][host]
+        return self.getOverlay()['neighbours'][host] if host in self.getOverlay()['neighbours'].keys() else []
+    
+    def build_initPacket(self, nodeIP):
+        return {
+            "type": "init",
+            "from": self.IP,
+            "data" : {
+                "downstream_neighbours": self.getNeighbours(nodeIP)
+            }}
+
     
     def run(self):
         print("RUNNING SERVER")
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            for neighbour_node in self.getNeighbours('self'):
+        for neighbour_node in self.getNeighbours('self'):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 try:
                     print(f"Connecting to {neighbour_node}:{self.port}")
                     s.connect((neighbour_node, self.port))
-                    neighbour_data = json.dumps({"neighbours": self.getNeighbours(neighbour_node)})
-                    s.sendall(neighbour_data.encode('utf-8'))
+                    packet = json.dumps(self.build_initPacket(neighbour_node))
+                    s.sendall(packet.encode('utf-8'))
                     print(f"Sent neighbours!")
                 
                     log_data = s.recv(1024).decode('utf-8')

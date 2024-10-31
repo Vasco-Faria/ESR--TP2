@@ -1,59 +1,79 @@
 import socket
 import json
 import sys
-import subprocess #TEMPORARY
 
 class oNode: 
-    def __init__(self, host, port=6010):
-        self.host = host
-        self.port = port
-        self.neighbours = []
-        self.run()
+	def __init__(self, host, port=6010):
+		self.IP = host
+		self.port = port
+		self.upstream_neighbours = []
+		self.downstream_neighbours = []
+		self.run()
 
-    #TEMPORARY
-    def ping_neighbor(self, neighbor_ip):
-        """Ping the neighbor and return True if the ping is successful."""
-        try:
-            # Ping the neighbor (This is for Linux/Mac, adjust for Windows)
-            print(f"Pinging node {neighbor_ip}")
-            result = subprocess.run(['ping', '-c', '1', neighbor_ip], stdout=subprocess.PIPE)
-            return result.returncode == 0
-        except Exception as e:
-            print(f"Ping to {neighbor_ip} failed: {e}")
-            return False
+	def handle_data(self, packet):
+		try:
+			data = json.loads(packet)
 
-    def handle_data(self, conn):
-        try:
-            data = conn.recv(1024).decode('utf-8')
+			if data["type"] == "init":
+				self.downstream_neighbours.extend(data["data"]["downstream_neighbours"])
+				print(f"Upstream neighbours: {self.downstream_neighbours}")
+				self.checkNeighboursLink()
 
-            if data:
-                neighbours_info = json.loads(data)
-                self.neighbours = neighbours_info.get("neighbours", [])
-                print(f"Received neighbors: {self.neighbours}")
+		except json.JSONDecodeError:
+			print("Received invalid JSON data.")
+		except Exception as e:
+			print(f"Error handling data: {e}")
+		
+	def checkNeighboursLink(self):
+		report = []
+		for neighbour_node in self.downstream_neighbours:
+			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+				try:
+					print(f"Connecting to {neighbour_node}")
+					s.connect((neighbour_node, 6010))
+					packet = json.dumps({"type": "checkcomm", "from": self.IP, "data": {}})
+					s.sendall(packet.encode('utf-8'))
+					print(f"Sent neighbours!")
+					s.close()
 
-        except json.JSONDecodeError:
-            print("Received invalid JSON data.")
-        except Exception as e:
-            print(f"Error handling data: {e}")
-    
-    def run(self): 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((self.host, self.port))
-            s.listen()
-            print(f"Node listening on {self.host}:{self.port}")
+				except socket.error as e:
+					print(f"Error connecting to {neighbour_node}: {e}")
+					report.append(neighbour_node)
 
-            while True: 
-                conn, addr = s.accept()
-                print("Connected!")
-                self.handle_data(conn)
+		return report
+	
+	def build_ReportPacket(self, array):
+		if len(array) > 0:
+			return {
+				"type":  "init_resp",
+				"from": self.IP,
+				"data": {
+					"error_nodes": array
+				}
+			}
+		
+		else:
+			return {
+				"type":  "init_resp",
+				"from": self.IP,
+				"data": {}
+			}
 
-                ping_results = {}
-                for neighbour in self.neighbours: 
-                    result  = self.ping_neighbor(neighbour)
-                    ping_results[neighbour] = "reachable" if result else "unreachable"
+	def run(self):
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			s.bind((self.IP, self.port))
+			s.listen()
+			print(f"Node listening on {self.IP}:{self.port}")
 
-                conn.sendall(f"Results: {ping_results}".encode('utf-8'))
-                conn.close()
+			while True: 
+				conn, addr = s.accept()
+				data = conn.recv(1024).decode('utf-8')
+
+				self.handle_data(data)
+				report_packet = self.build_ReportPacket(self.checkNeighboursLink())
+
+				conn.sendall(json.dumps(report_packet).encode("utf-8"))
+				conn.close()
 
 if __name__ == "__main__":
 	try:
