@@ -18,13 +18,12 @@ class Server:
 		rtspSocket.bind(('', SERVER_PORT))
 		rtspSocket.listen(5)
 		print("Server On! Port: " + str(SERVER_PORT))
-
-		
-		while True:
-			clientInfo = {}
-			clientInfo['rtspSocket'] = rtspSocket.accept()
-			ServerWorker(clientInfo).run()	
-			print("Client Joined!")	
+		rtspSocket.listen(5)     
+  
+		clientInfo = {}
+		clientInfo['rtspSocket'] = rtspSocket.accept()
+		ServerWorker(clientInfo).run()	
+		print("Client Joined!")	
 
 if __name__ == "__main__":
 	(Server()).main()
