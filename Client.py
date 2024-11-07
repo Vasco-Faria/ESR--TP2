@@ -1,12 +1,9 @@
 from tkinter import *
-import tkinter.messagebox
+import tkinter.messagebox as tkMessageBox
 from PIL import Image, ImageTk
-import socket, threading, sys, traceback, os
+import socket, threading, sys, traceback, os, json, subprocess
 
 from RtpPacket import RtpPacket
-
-import cv2
-import numpy as np
 
 CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
@@ -99,6 +96,7 @@ class Client:
 		while True:
 			try:
 				data = self.rtpSocket.recv(20480)
+				print(f"DATA: {data}")
 				if data:
 					rtpPacket = RtpPacket()
 					rtpPacket.decode(data)
@@ -178,9 +176,11 @@ class Client:
 		else:
 			return
 
+		#TODO change the encapsulate with a wrapper
+		packet = json.dumps({"type": "request", "path": [self.get_myIP()], "data": request})
 		# Send the RTSP request using rtspSocket
-		self.rtspSocket.send(request.encode("utf-8"))
-		print('\nData sent:\n' + request)
+		self.rtspSocket.send(packet.encode("utf-8"))
+		print('\nData sent:\n' + packet)
 	
 	def recvRtspReply(self):
 		"""Receive RTSP reply from the server."""
@@ -238,3 +238,16 @@ class Client:
 			self.exitClient()
 		else: # When the user presses cancel, resume playing.
 			self.playMovie()
+
+
+	'''
+		TODO how can it be possible to make that config.json file on server
+		have the same IP's as the one we get from myIP function
+	'''
+	def get_myIP(self): 
+		try: 
+			ip = subprocess.check_output("hostname -I | awk '{print $1}'", shell=True).decode().strip()
+			return ip
+		except subprocess.CalledProcessError as e: 
+			print(f"Error getting IP: {e}")
+			return None 

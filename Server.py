@@ -12,7 +12,7 @@ class Server:
       
 		except:
 			print("[Usage: Server.py Server_port]\n")
-		overlay_builder = Overlay_Builder()
+		overlay_builder = Overlay_Builder(SERVER_PORT)
 		overlay_builder.run()
 
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

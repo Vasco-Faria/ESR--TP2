@@ -1,9 +1,8 @@
 from random import randint
-import sys, traceback, threading, socket
+import sys, traceback, threading, socket, json
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
-import time
 import cv2
 
 class ServerWorker:
@@ -40,14 +39,16 @@ class ServerWorker:
 		"""Receive RTSP request from the client."""
 		connSocket = self.clientInfo['rtspSocket'][0]
 		while True:            
-			data = connSocket.recv(256)
-			if data:
-				print("Data received:\n" + data.decode("utf-8"))
-				self.processRtspRequest(data.decode("utf-8"))
+			packet = connSocket.recv(256)
+			data = json.loads(packet.decode("utf-8"))
+			if data["data"]:
+				print(f"Data received:\n {data}")
+				self.processRtspRequest(data)
 	
-	def processRtspRequest(self, data):
+	def processRtspRequest(self, packet):
 		"""Process RTSP request sent from the client."""
 		# Get the request type
+		data = packet["data"]
 		request = data.split('\n')
 		line1 = request[0].split(' ')
 		requestType = line1[0]
@@ -173,7 +174,9 @@ class ServerWorker:
 			#print("200 OK")
 			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
 			connSocket = self.clientInfo['rtspSocket'][0]
-			connSocket.send(reply.encode())
+			packet = {"type": "response", "from": "X", "data": reply}
+			print(f"Sending packet:\n {packet}")
+			connSocket.send(json.dumps(packet).encode("utf-8"))
 		
 		# Error messages
 		elif code == self.FILE_NOT_FOUND_404:

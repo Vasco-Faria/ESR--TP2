@@ -2,9 +2,10 @@ import socket
 import json
 
 class Overlay_Builder: 
-    def __init__(self, host='10.0.5.10', config_file='overlay.build.json', port=6010):
+    def __init__(self, stream_port, host='10.0.5.10', config_file='overlay.build.json', manage_port=6010):
         self.IP = host
-        self.port = port
+        self.stream_port = stream_port
+        self.manage_port = manage_port
         self.config_file = config_file
         self.overlay = {}
         self.overlay['neighbours'] = {}
@@ -40,7 +41,8 @@ class Overlay_Builder:
             "type": "init",
             "from": self.IP,
             "data" : {
-                "downstream_neighbours": self.getNeighbours(nodeIP)
+                "downstream_neighbours": self.getNeighbours(nodeIP),
+                "stream_port": self.stream_port
             }}
 
     
@@ -49,8 +51,8 @@ class Overlay_Builder:
         for neighbour_node in self.getNeighbours('self'):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 try:
-                    print(f"Connecting to {neighbour_node}:{self.port}")
-                    s.connect((neighbour_node, self.port))
+                    print(f"Connecting to {neighbour_node}:{self.manage_port}")
+                    s.connect((neighbour_node, self.manage_port))
                     packet = json.dumps(self.build_initPacket(neighbour_node))
                     s.sendall(packet.encode('utf-8'))
                     print(f"Sent neighbours!")
