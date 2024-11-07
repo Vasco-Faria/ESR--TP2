@@ -20,6 +20,9 @@ class Client:
 	PLAY = 1
 	PAUSE = 2
 	TEARDOWN = 3
+	SWITCH = 4
+ 
+	videoN=0
 	
 	# Initiation..
 	def __init__(self, master, serveraddr, serverport, rtpport):
@@ -82,8 +85,9 @@ class Client:
 	
 	def setupMovie(self):
 		"""Setup button handler."""
-		if self.state == self.INIT:
+		if self.state == self.READY or self.state == self.INIT:
 			self.sendRtspRequest(self.SETUP)
+			print("Processing Setup for movie: "+ self.fileName)
 	
 	def exitClient(self):
 		"""Teardown button handler."""
@@ -120,13 +124,27 @@ class Client:
 		if selected_video in self.videoList:
 			# Atualiza o vídeo selecionado e reconfigura no servidor
 			self.fileName = selected_video
-			print(self.fileName)
-			self.setupMovie()  # Reinicia com o novo vídeo
+			
+			if self.videoN == 0:
+				# Primeiro vídeo a ser escolhido: envia uma solicitação SETUP
+				print("Configurando o primeiro vídeo:", self.fileName)
+				self.sendRtspRequest(self.SETUP)
+				self.videoN = 1  # Atualiza o contador para indicar que um vídeo foi escolhido
+			else:
+				# Envia uma solicitação SWITCH ao servidor
+				print("Mudando para o vídeo:", self.fileName)
+				self.sendRtspRequest(self.SWITCH)
+
+			# Para a thread existente do listenRtp, se estiver rodando
+			if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+				self.playEvent.set()  # Sinaliza para parar a thread
+				self.rtp_thread.join()  # Espera a thread terminar
+			
 			self.switch_window.destroy()  # Fecha a janela de seleção
 		else:
 			messagebox.showerror("Erro", "Vídeo não encontrado na lista.")
 			self.switch_window.destroy()
-	
+		
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
@@ -135,6 +153,8 @@ class Client:
 			self.playEvent = threading.Event()
 			self.playEvent.clear()
 			self.sendRtspRequest(self.PLAY)
+			self.videoN=1
+			self.frameNbr=0
 	
 	def listenRtp(self):		
 		"""Listen for RTP packets."""
@@ -227,7 +247,14 @@ class Client:
 			request = f"TEARDOWN RTSP/1.0\nCSeq: {self.rtspSeq}\nSession: {self.sessionId}\n"
 			self.requestSent = self.TEARDOWN
 			print('\nTEARDOWN event\n')
+   
+		elif requestCode == self.SWITCH:
+			self.rtspSeq += 1
+			request = f"SWITCH {self.fileName} RTSP/1.0\nCSeq: {self.rtspSeq}\nSession: {self.sessionId}\n"
+			self.requestSent = self.SWITCH
+			print('\nSWITCH event\n')
 
+		
 		else:
 			return
 
