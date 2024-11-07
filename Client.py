@@ -102,6 +102,7 @@ class Client:
    
 	def switchVideo(self):
 		"""Open a window to select a new video from the server's list."""
+		self.pauseMovie()
 		# Cria uma nova janela para seleção de vídeo
 		self.switch_window = Toplevel(self.master)
 		self.switch_window.title("Selecionar Vídeo")
