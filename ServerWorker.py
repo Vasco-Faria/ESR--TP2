@@ -31,9 +31,25 @@ class ServerWorker:
 		self.clientInfo = clientInfo
 		self.filename = filename
 		self.videoStream = VideoStream(filename)
+		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.rtpSocket.bind(('', 25000))
 			
 	def run(self):
-		threading.Thread(target=self.recvRtspRequest).start()
+		#threading.Thread(target=self.recvRtspRequest).start()
+		threading.Thread(target=self.recvRtpRequest).start()
+
+	def recvRtpRequest(self):
+		"""Receive RTP request from the oNode."""
+		while True:
+			try: 
+				self.rtpSocket.settimeout(5)            
+				packet, addr = self.rtpSocket.recvfrom(256)
+				data = json.loads(packet.decode("utf-8"))
+				if data["data"]:
+					print(f"Data received:\n {data}")
+					#self.processRtspRequest(data)
+			except socket.timeout:
+				continue
 	
 	def recvRtspRequest(self):
 		"""Receive RTSP request from the client."""

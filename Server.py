@@ -20,10 +20,10 @@ class Server:
 		rtspSocket.listen(5)
 
 		
-		while True:
-			clientInfo = {}
-			clientInfo['rtspSocket'] = rtspSocket.accept()
-			ServerWorker(clientInfo,filename).run()		
+		#while True:
+		clientInfo = {}
+		#clientInfo['rtspSocket'] = rtspSocket.accept()
+		ServerWorker(clientInfo,filename).run()		
 
 if __name__ == "__main__":
 	(Server()).main()
