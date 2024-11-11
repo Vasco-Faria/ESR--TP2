@@ -9,51 +9,24 @@ class oNode:
 		self.stream_port = stream_port
 		self.upstream_neighbours = set()
 		self.downstream_neighbours = set()
-		self.management_socket = threading.Thread(target=self.listenManagement).start() #run a thread to communicate other nodes about overlay network
-		self.stream_socket = threading.Thread(target=self.listenStream).start() #run a thread to communicate other nodes about stream
+		self.management_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
+		self.run()
+
+	def run(self): 
+		self.management_socket.bind((self.IP, self.manage_port))
+		self.management_thread = threading.Thread(target=self.listenManagement).start() #run a thread to communicate other nodes about overlay network
+
+		self.stream_socket.bind((self.IP, self.stream_port))
+		self.stream_thread = threading.Thread(target=self.listenStream).start() #run a thread to communicate other nodes about stream
+
 
 	def getNeighbourFromIdx(self, set, index):
 		temp = list(set)
 		return temp[index]
-	
-	def handle_data(self, packet):
-		try:
-			data = json.loads(packet)
-
-			if data["type"] == "init":
-				self.downstream_neighbours.update(data["data"]["downstream_neighbours"])
-				#self.stream_port = data["data"]["stream_port"] lets assume the stream port (25000) is fixed 
-				self.upstream_neighbours.add(data["from"])
-				print(f"\nDownstream neighbours: {self.downstream_neighbours} Stream_port: {self.stream_port}")
-			
-			elif data["type"] == "checkcomm":
-				self.upstream_neighbours.add(data["from"])
-				self.stream_port = data["data"]["stream_port"]
-				self.startClientSocket()
-			
-			elif data["type"] == "request":
-				data["path"].append(self.IP)
-				print(f"STREAM DATA: {data}")
-				self.stream_queueMessages.put(data)
-
-			elif data["type"] == "response": 
-				data["path"].pop()
-				print(f"STREAM DATA: {data}")
-				self.sendDownstream(data)
-
-		except json.JSONDecodeError:
-			print("Received invalid JSON data.")
-		except Exception as e:
-			print(f"Error handling data: {e}")
-
-	def streamListen(self): 
-		print("oNode started listening!")
-		if self.stream_port_listening == 0:
-			threading.Thread(target=self.awaitConn).start()
-		else: 
-			print("oNode already listening for streams!")
-	
+		
 	def build_ReportPacket(self, array):
 		return {
 			"type":  "init_resp",
@@ -83,21 +56,39 @@ class oNode:
 		#The node is not a server to another oNode
 		if len(self.downstream_neighbours) == 0: 
 			print("Starting client socket")
-			self.client_socket = threading.Thread(target=self.listenClient).start()
+			self.client_socket.bind((self.IP, self.client_port))
+			self.client_thread = threading.Thread(target=self.listenClient).start()
+	
+	def parseManagement(self, packet):
+		try:
+			data = json.loads(packet)
+
+			if data["type"] == "init":
+				self.downstream_neighbours.update(data["data"]["downstream_neighbours"])
+				self.upstream_neighbours.add(data["from"])
+				print(f"\nDownstream neighbours: {self.downstream_neighbours} Stream_port: {self.stream_port}")
+			
+			elif data["type"] == "checkcomm":
+				self.upstream_neighbours.add(data["from"])
+				self.stream_port = data["data"]["stream_port"]
+				self.startClientSocket()
+		
+		except json.JSONDecodeError:
+			print("Received invalid JSON data.")
+		except Exception as e:
+			print(f"Error handling data: {e}")
 
 	def listenManagement(self): 
 		try:
-			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-				s.bind((self.IP, self.manage_port))
-				s.listen()
-				print(f"[THREAD]Node listening on {self.IP}:{self.manage_port}")
+				self.management_socket.listen()
+				print(f"[THREAD {self.management_socket.getsockname()}]Node listening")
 
 				while True:
-					conn, (fromIP, fromPort) = s.accept()
-					print(f"Accepted connection from {fromIP}:{fromPort}")
+					conn, (fromIP, fromPort) = self.management_socket.accept()
+					print(f"[THREAD {self.management_socket.getsockname()}]: Accepted connection from {fromIP}:{fromPort}")
 					data = conn.recv(1024).decode('utf-8')
 
-					self.handle_data(data)
+					self.parseManagement(data)
 					report_packet = self.build_ReportPacket(self.checkNeighboursLink())
 
 					conn.sendall(json.dumps(report_packet).encode("utf-8"))
@@ -105,49 +96,91 @@ class oNode:
 
 		except Exception as e: 
 			print(f"Error (listenManagement): {e}")
+	
+	def parseClient(self, packet): 
+		try:
+			data = json.loads(packet)
+			
+			if data["type"] == "request":
+				data["path"].append(self.IP)
+				print(f"STREAM DATA: {data}")
+				self.stream_queueMessages.put(data)
+
+		except json.JSONDecodeError:
+			print("Received invalid JSON data.")
+		except Exception as e:
+			print(f"Error handling data: {e}")
 
 	def listenClient(self): 
 		try:
-			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-				s.bind((self.IP, self.client_port))
-				s.listen()
-				print(f"[THREAD]Node listening on {self.IP}:{self.client_port}")
+			self.client_socket.listen()
+			print(f"[THREAD {self.client_socket.getsockname()}]Node listening")
 
-				while True: 	#Run if it doenst have downstream neighbour (oNodes that are clients) 	
-					conn, (fromIP, fromPort) = s.accept()
-					print(f"Connect accepted from {fromIP}:{fromPort}")
-					data = conn.recv(1024).decode('utf-8')
-					
-					self.handle_data(data)
+			while True: 	#Run if it doenst have downstream neighbour (oNodes that are clients) 	
+				conn, (fromIP, fromPort) = self.client_socket.accept()
+				print(f"[THREAD {self.client_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
+				data = conn.recv(1024).decode('utf-8')
+				
+				self.parseClient(data)
 
-					s.close()
+				self.client_socket.close()
 
 		except Exception as e: 
 			print(f"Error (listenClient): {e}")
+
+	def parseStream(self, packet):
+		try:
+			data = json.loads(packet)
+			
+			if data["type"] == "request":
+				data["path"].append(self.IP)
+				print(f"STREAM DATA: {data}")
+				self.stream_queueMessages.put(data)
+
+			elif data["type"] == "response": 
+				data["path"].pop()
+				print(f"STREAM DATA: {data}")
+				self.sendDownstream(data)
+
+		except json.JSONDecodeError:
+			print("Received invalid JSON data.")
+		except Exception as e:
+			print(f"Error handling data: {e}")
 	
 	def listenStream(self):
 		try:
-			with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-				s.bind((self.IP, self.stream_port))
-				print(f"[THREAD]Node listening on {self.IP}:{self.stream_port}")
+			print(f"[THREAD {self.stream_socket.getsockname()}]Node listening")
 
-				while True:
-					while not self.stream_queueMessages.empty():
-						packet = self.stream_queueMessages.get()
-						toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
-						print(f"[THREAD] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
-						packet = json.dumps(packet).encode("utf-8")
+			while True:
+				while not self.stream_queueMessages.empty():
+					packet = self.stream_queueMessages.get()
+					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
+					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
+					packet = json.dumps(packet).encode("utf-8")
 
-						s.sendto(packet, (toIP, self.stream_port))
+					self.stream_socket.sendto(packet, (toIP, self.stream_port))
 
-					try:
-						s.settimeout(0.5) 
-						data, (fromIP, fromPort) = s.recvfrom(1024)
-						print(f"Connect accepted from {fromIP}:{fromPort}")
-						
-						self.handle_data(data.decode("utf-8"))
-					except socket.timeout:
-						continue
+				try:
+					self.stream_socket.settimeout(0.5) 
+					packet, (fromIP, fromPort) = self.stream_socket.recvfrom(1024)
+					print(f"[THREAD {self.stream_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
+					
+					data = json.loads(packet.decode("utf-8"))
+					
+					if data["type"] == "request":
+						data["path"].append(self.IP)
+						print(f"STREAM DATA: {data}")
+						self.stream_queueMessages.put(data)
+
+					elif data["type"] == "response": 
+						data["path"].pop()
+						print(f"STREAM DATA: {data}")
+						self.sendDownstream(data)
+
+				except json.JSONDecodeError:
+					print("Received invalid JSON data.")
+				except socket.timeout:
+					continue
 
 		except Exception as e: 
 			print(f"Error (listenStream): {e}")

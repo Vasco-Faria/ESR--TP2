@@ -1,5 +1,5 @@
 from random import randint
-import sys, traceback, threading, socket, json
+import sys, traceback, threading, socket, json, base64, time 
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
@@ -48,6 +48,7 @@ class ServerWorker:
 				if data["data"]:
 					print(f"Data received:\n {data}")
 					#self.processRtspRequest(data)
+					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
 			except socket.timeout:
 				continue
 	
@@ -132,18 +133,18 @@ class ServerWorker:
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
 			
-	def sendRtp(self):
+	def sendRtp(self, path):
 		"""Send RTP packets over UDP."""
 		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
 		fps = self.videoStream.cap.get(cv2.CAP_PROP_FPS)
 		delay = 1 / fps # Delay between sending each frame based on video frame rate
 
 		while True:
-			self.clientInfo['event'].wait(0.05) 
+			#self.clientInfo['event'].wait(0.05) 
 			
 			# Stop sending if request is PAUSE or TEARDOWN
-			if self.clientInfo['event'].isSet(): 
-				break 
+			#if self.clientInfo['event'].isSet(): 
+			#	break 
 			#print(self.clientInfo)
 			#data = self.clientInfo['videoStream'].nextFrame()
 			data = self.videoStream.nextFrame()
@@ -151,14 +152,23 @@ class ServerWorker:
 				#frameNumber = self.clientInfo['videoStream'].frameNbr()
 				frameNumber = self.videoStream.frameNbr()
 				try:
-					address = self.clientInfo['rtspSocket'][1][0]
-					port = int(self.clientInfo['rtpPort'])
+					#address = self.clientInfo['rtspSocket'][1][0]
+					#port = int(self.clientInfo['rtpPort'])
 					print("Size of data: ", len(data))
 					
 					for i in range(0, len(data), self.PACKET_SIZE):
 						chunk = data[i:i+self.PACKET_SIZE]
 						print("Size of chunk: ", len(chunk))
-						self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
+						encoded_chunk = base64.b64encode(self.makeRtp(chunk, frameNumber)).decode("utf-8")
+						packet = {"type": "response",
+									"path": path,
+									"data": encoded_chunk}
+						packet = json.dumps(packet).encode("utf-8")
+						#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
+						addr = (path[-1], 25000)
+						print(f"SENDING TO {addr}")
+						self.rtpSocket.sendto(packet, addr)
+						time.sleep(10)
 					
 					#time.sleep(delay)
 				except:
