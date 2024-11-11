@@ -166,9 +166,9 @@ class ServerWorker:
 						packet = json.dumps(packet).encode("utf-8")
 						#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
 						addr = (path[-1], 25000)
-						print(f"SENDING TO {addr}")
+						#print(f"SENDING TO {addr}")
 						self.rtpSocket.sendto(packet, addr)
-						time.sleep(10)
+						time.sleep(2)
 					
 					#time.sleep(delay)
 				except:

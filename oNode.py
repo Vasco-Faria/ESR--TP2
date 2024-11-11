@@ -127,25 +127,6 @@ class oNode:
 
 		except Exception as e: 
 			print(f"Error (listenClient): {e}")
-
-	def parseStream(self, packet):
-		try:
-			data = json.loads(packet)
-			
-			if data["type"] == "request":
-				data["path"].append(self.IP)
-				print(f"STREAM DATA: {data}")
-				self.stream_queueMessages.put(data)
-
-			elif data["type"] == "response": 
-				data["path"].pop()
-				print(f"STREAM DATA: {data}")
-				self.sendDownstream(data)
-
-		except json.JSONDecodeError:
-			print("Received invalid JSON data.")
-		except Exception as e:
-			print(f"Error handling data: {e}")
 	
 	def listenStream(self):
 		try:
@@ -162,8 +143,8 @@ class oNode:
 
 				try:
 					self.stream_socket.settimeout(0.5) 
-					packet, (fromIP, fromPort) = self.stream_socket.recvfrom(1024)
-					print(f"[THREAD {self.stream_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
+					packet, (fromIP, fromPort) = self.stream_socket.recvfrom(10240)
+					print(f"[THREAD {self.stream_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}\n")
 					
 					data = json.loads(packet.decode("utf-8"))
 					
@@ -175,10 +156,14 @@ class oNode:
 					elif data["type"] == "response": 
 						data["path"].pop()
 						print(f"STREAM DATA: {data}")
-						self.sendDownstream(data)
+						addr = (data["path"][-1], 25000)
+						new_packet = json.dumps({"type": data["type"],	"path": data["path"], "data": data["data"]}).encode("utf-8")
+						print(f"SENDING TO {addr}")
+						self.stream_socket.sendto(new_packet, addr)
 
-				except json.JSONDecodeError:
-					print("Received invalid JSON data.")
+				except json.JSONDecodeError as e:
+					print(f"Received invalid JSON data: {e}")
+					print(f"\nPacket: {packet}")
 				except socket.timeout:
 					continue
 
