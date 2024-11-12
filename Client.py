@@ -1,9 +1,12 @@
 from tkinter import *
-import tkinter.messagebox
+
+import tkinter.messagebox as tkMessageBox
+import socket, threading, sys, traceback, os, json, subprocess, base64
 from tkinter.simpledialog import askstring
 from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os
 from tkinter import Toplevel, OptionMenu, StringVar, Button, Label, messagebox
+
 
 from RtpPacket import RtpPacket
 
@@ -149,6 +152,7 @@ class Client:
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
+			print("Pressed play")
 			# Create a new thread to listen for RTP packets
 			threading.Thread(target=self.listenRtp).start()
 			self.playEvent = threading.Event()
@@ -161,7 +165,11 @@ class Client:
 		"""Listen for RTP packets."""
 		while True:
 			try:
-				data = self.rtpSocket.recv(20480)
+				packet = self.rtpSocket.recv(20480)
+				temp = json.loads(packet.decode("utf-8"))
+				data = base64.b64decode(temp["data"])
+				print(f"DATA")
+
 				if data:
 					rtpPacket = RtpPacket()
 					rtpPacket.decode(data)
@@ -259,9 +267,14 @@ class Client:
 		else:
 			return
 
+		#TODO change the encapsulate with a wrapper
+		packet = json.dumps({"type": "request", "path": [self.get_myIP()], "data": request})
 		# Send the RTSP request using rtspSocket
-		self.rtspSocket.send(request.encode("utf-8"))
-		print('\nData sent:\n' + request)
+		self.rtspSocket.send(packet.encode("utf-8"))
+		print('\nData sent:\n' + packet)
+		self.openRtpPort()
+		self.state = self.READY
+		self.playMovie()
 	
 	def recvRtspReply(self):
 		"""Receive RTSP reply from the server."""
@@ -305,7 +318,7 @@ class Client:
 	def openRtpPort(self):
 		"""Open RTP socket binded to a specified port."""
 		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		self.rtpSocket.settimeout(0.5)
+		self.rtpSocket.settimeout(2)
 		try:
 			self.rtpSocket.bind(('', self.rtpPort))
 			print('\nBind \n')
@@ -319,3 +332,18 @@ class Client:
 			self.exitClient()
 		else: # When the user presses cancel, resume playing.
 			self.playMovie()
+
+
+	'''
+		TODO how can it be possible to make that config.json file on server
+		have the same IP's as the one we get from myIP function
+	'''
+	def get_myIP(self): 
+		try: 
+			ip = subprocess.check_output("hostname -I | awk '{print $1}'", shell=True).decode().strip()
+			return ip
+		except subprocess.CalledProcessError as e: 
+			print(f"Error getting IP: {e}")
+			return None 
+
+

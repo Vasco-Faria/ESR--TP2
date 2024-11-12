@@ -1,55 +1,77 @@
 import os
 from random import randint
-import cv2
-import sys, traceback, threading, socket
+import sys, traceback, threading, socket, json, base64, time 
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
+import cv2
 
 class ServerWorker:
-    SETUP = 'SETUP'
-    PLAY = 'PLAY'
-    PAUSE = 'PAUSE'
-    TEARDOWN = 'TEARDOWN'
-    
-    INIT = 0
-    READY = 1
-    PLAYING = 2
-    state = INIT
+	SETUP = 'SETUP'
+	PLAY = 'PLAY'
+	PAUSE = 'PAUSE'
+	TEARDOWN = 'TEARDOWN'
+ 
+	
+	INIT = 0
+	READY = 1
+	PLAYING = 2
+	state = INIT
 
-    OK_200 = 0
-    FILE_NOT_FOUND_404 = 1
-    CON_ERR_500 = 2
+	OK_200 = 0
+	FILE_NOT_FOUND_404 = 1
+	CON_ERR_500 = 2
+
+	PACKET_SIZE = 14000
+	
+	clientInfo = {}
+  video_folder = "Videos" 
+ 
+ 
+	
+	def __init__(self, clientInfo):
+		self.clientInfo = clientInfo
+    self.sendVideoList()
+		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.rtpSocket.bind(('', 25000))
+			
+	def run(self):
+		#threading.Thread(target=self.recvRtspRequest).start()
+		threading.Thread(target=self.recvRtpRequest).start()
     
-    PACKET_SIZE = 14000
-    
-    clientInfo = {}
-    video_folder = "Videos"  # Path to the folder containing videos
-    
-    def __init__(self, clientInfo):
-        self.clientInfo = clientInfo
-        self.sendVideoList()
-        
-    def run(self):
-        threading.Thread(target=self.recvRtspRequest).start()
-        
-    def sendVideoList(self):
-        """Envia a lista de vídeos para o cliente assim que ele se conecta."""
-        videos = os.listdir(self.video_folder)  # Lista arquivos na pasta
-        video_list = "\n".join(videos)
-        connSocket = self.clientInfo['rtspSocket'][0]
-        connSocket.sendall(f"AVAILABLE_VIDEOS:\n{video_list}".encode())
-    
-    def recvRtspRequest(self):
-        """Receive RTSP request from the client."""
-        connSocket = self.clientInfo['rtspSocket'][0]
-        while True:            
-            data = connSocket.recv(256)
-            if data:
-                print("Data received:\n" + data.decode("utf-8"))
-                self.processRtspRequest(data.decode("utf-8"))
-    
-    def processRtspRequest(self, data):
+  def sendVideoList(self):
+    """Envia a lista de vídeos para o cliente assim que ele se conecta."""
+    videos = os.listdir(self.video_folder)  # Lista arquivos na pasta
+    video_list = "\n".join(videos)
+    connSocket = self.clientInfo['rtspSocket'][0]
+    connSocket.sendall(f"AVAILABLE_VIDEOS:\n{video_list}".encode())
+
+	def recvRtpRequest(self):
+		"""Receive RTP request from the oNode."""
+		while True:
+			try: 
+				self.rtpSocket.settimeout(5)            
+				packet, addr = self.rtpSocket.recvfrom(256)
+				data = json.loads(packet.decode("utf-8"))
+				if data["data"]:
+					print(f"Data received:\n {data}")
+					#self.processRtspRequest(data)
+					time.sleep(5)
+					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
+			except socket.timeout:
+				continue
+	
+	def recvRtspRequest(self):
+		"""Receive RTSP request from the client."""
+		connSocket = self.clientInfo['rtspSocket'][0]
+		while True:            
+			packet = connSocket.recv(256)
+			data = json.loads(packet.decode("utf-8"))
+			if data["data"]:
+				print(f"Data received:\n {data}")
+				self.processRtspRequest(data)
+	
+	    def processRtspRequest(self, data):
         """Process RTSP request sent from the client."""
         # Get the request type
         request = data.split('\n')
@@ -172,56 +194,84 @@ class ServerWorker:
                 print("Cannot switch video in current state:", self.state)
                 self.replyRtsp(self.CON_ERR_500, seq)
 
+			
+	def sendRtp(self, path):
+		"""Send RTP packets over UDP."""
+		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
+		fps = self.videoStream.cap.get(cv2.CAP_PROP_FPS)
+		delay = 1 / fps # Delay between sending each frame based on video frame rate
+
+		while True:
+			#self.clientInfo['event'].wait(0.05) 
+			
+			# Stop sending if request is PAUSE or TEARDOWN
+			#if self.clientInfo['event'].isSet(): 
+			#	break 
+			#print(self.clientInfo)
+			#data = self.clientInfo['videoStream'].nextFrame()
+			data = self.videoStream.nextFrame()
+			if data is not None and len(data) > 0: 
+				#frameNumber = self.clientInfo['videoStream'].frameNbr()
+				frameNumber = self.videoStream.frameNbr()
+				try:
+					#address = self.clientInfo['rtspSocket'][1][0]
+					#port = int(self.clientInfo['rtpPort'])
+					print("Size of data: ", len(data))
+					
+					for i in range(0, len(data), self.PACKET_SIZE):
+						chunk = data[i:i+self.PACKET_SIZE]
+						print("Size of chunk: ", len(chunk))
+						encoded_chunk = base64.b64encode(self.makeRtp(chunk, frameNumber)).decode("utf-8")
+						packet = {"type": "response",
+									"path": path,
+									"data": encoded_chunk}
+						packet = json.dumps(packet).encode("utf-8")
+						#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
+						addr = (path[-1], 25000)
+						#print(f"SENDING TO {addr}")
+						self.rtpSocket.sendto(packet, addr)
+						#time.sleep(2)
+					
+					#time.sleep(delay)
+				except:
+					print("Connection Error")
+					print('-'*60)
+					traceback.print_exc(file=sys.stdout)
+					print('-'*60)
+
+	def makeRtp(self, payload, frameNbr, pt=96):
+		"""RTP-packetize the video data."""
+		version = 2
+		padding = 0
+		extension = 0
+		cc = 0
+		marker = 1 if len(payload) < self.PACKET_SIZE else 0
+		#pt = 26 # MJPEG type
+		seqnum = frameNbr
+		ssrc = 0 
+		
+		rtpPacket = RtpPacket()
+		
+		rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, payload)
+		
+		return rtpPacket.getPacket()
+		
+	def replyRtsp(self, code, seq):
+		"""Send RTSP reply to the client."""
+		if code == self.OK_200:
+			#print("200 OK")
+			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
+			connSocket = self.clientInfo['rtspSocket'][0]
+			packet = {"type": "response", "from": "X", "data": reply}
+			print(f"Sending packet:\n {packet}")
+			connSocket.send(json.dumps(packet).encode("utf-8"))
+		
+		# Error messages
+		elif code == self.FILE_NOT_FOUND_404:
+			print("404 NOT FOUND")
+		elif code == self.CON_ERR_500:
+			print("500 CONNECTION ERROR")
+ 
     
-    def sendRtp(self):
-        """Send RTP packets over UDP."""
-        videoStream = self.clientInfo['videoStream']
-        fps = videoStream.cap.get(cv2.CAP_PROP_FPS)
-        delay = 1 / fps 
-        
-        while True:
-            self.clientInfo['event'].wait(0.05)
-            if self.clientInfo['event'].isSet(): 
-                break 
-            data = videoStream.nextFrame()
-            if data is not None and len(data) > 0: 
-                frameNumber = videoStream.frameNbr()
-                try:
-                    address = self.clientInfo['rtspSocket'][1][0]
-                    port = int(self.clientInfo['rtpPort'])
-                    print("Size of data: ", len(data))
-                    for i in range(0, len(data), self.PACKET_SIZE):
-                        chunk = data[i:i+self.PACKET_SIZE]
-                        print("Size of chunk: ", len(chunk))
-                        self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
-                except:
-                    print("Connection Error")
-                    print('-'*60)
-                    traceback.print_exc(file=sys.stdout)
-                    print('-'*60)
-    def makeRtp(self, payload, frameNbr, pt=96):
-        """RTP-packetize the video data."""
-        version = 2
-        padding = 0
-        extension = 0
-        cc = 0
-        marker = 1 if len(payload) < self.PACKET_SIZE else 0
-        seqnum = frameNbr
-        ssrc = 0 
-        
-        rtpPacket = RtpPacket()
-        
-        rtpPacket.encode(version, padding, extension, cc, seqnum, marker, pt, ssrc, payload)
-        return rtpPacket.getPacket()
     
-    
-    def replyRtsp(self, code, seq):
-        """Send RTSP reply to the client."""
-        if code == self.OK_200:
-            reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
-            connSocket = self.clientInfo['rtspSocket'][0]
-            connSocket.send(reply.encode())
-        elif code == self.FILE_NOT_FOUND_404:
-            print("404 NOT FOUND")
-        elif code == self.CON_ERR_500:
-        	print("500 CONNECTION ERROR")
+   
