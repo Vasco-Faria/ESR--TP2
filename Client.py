@@ -88,7 +88,7 @@ class Client:
 			threading.Thread(target=self.listenRtp).start()
 			self.playEvent = threading.Event()
 			self.playEvent.clear()
-			self.sendRtspRequest(self.PLAY)
+			#self.sendRtspRequest(self.PLAY)
 	
 	def listenRtp(self):		
 		"""Listen for RTP packets."""
@@ -99,7 +99,7 @@ class Client:
 				packet = self.rtpSocket.recv(20480)
 				temp = json.loads(packet.decode("utf-8"))
 				data = base64.b64decode(temp["data"])
-				print(f"DATA: {data}")
+				print(f"DATA")
 
 				if data:
 					rtpPacket = RtpPacket()

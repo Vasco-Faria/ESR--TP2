@@ -48,6 +48,7 @@ class ServerWorker:
 				if data["data"]:
 					print(f"Data received:\n {data}")
 					#self.processRtspRequest(data)
+					time.sleep(5)
 					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
 			except socket.timeout:
 				continue
@@ -168,7 +169,7 @@ class ServerWorker:
 						addr = (path[-1], 25000)
 						#print(f"SENDING TO {addr}")
 						self.rtpSocket.sendto(packet, addr)
-						time.sleep(2)
+						#time.sleep(2)
 					
 					#time.sleep(delay)
 				except:

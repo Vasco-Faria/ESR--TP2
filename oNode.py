@@ -136,6 +136,7 @@ class oNode:
 				while not self.stream_queueMessages.empty():
 					packet = self.stream_queueMessages.get()
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
+					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {len(packet)}\nTo:{toIP}:{self.stream_port}]")
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
 					packet = json.dumps(packet).encode("utf-8")
 
