@@ -1,7 +1,12 @@
 from tkinter import *
+
 import tkinter.messagebox as tkMessageBox
-from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os, json, subprocess, base64
+from tkinter.simpledialog import askstring
+from PIL import Image, ImageTk
+import socket, threading, sys, traceback, os
+from tkinter import Toplevel, OptionMenu, StringVar, Button, Label, messagebox
+
 
 from RtpPacket import RtpPacket
 
@@ -18,6 +23,9 @@ class Client:
 	PLAY = 1
 	PAUSE = 2
 	TEARDOWN = 3
+	SWITCH = 4
+ 
+	videoN=0
 	
 	# Initiation..
 	def __init__(self, master, serveraddr, serverport, rtpport):
@@ -27,47 +35,62 @@ class Client:
 		self.serverAddr = serveraddr
 		self.serverPort = int(serverport)
 		self.rtpPort = int(rtpport)
+		self.fileName = None
 		self.rtspSeq = 0
 		self.sessionId = 0
 		self.requestSent = -1
 		self.teardownAcked = 0
 		self.connectToServer()
 		self.frameNbr = 0
+  
 		
 	def createWidgets(self):
 		"""Build GUI."""
-		# Create Setup button
-		self.setup = Button(self.master, width=20, padx=3, pady=3)
-		self.setup["text"] = "Setup"
-		self.setup["command"] = self.setupMovie
-		self.setup.grid(row=1, column=0, padx=2, pady=2)
-		
-		# Create Play button		
-		self.start = Button(self.master, width=20, padx=3, pady=3)
-		self.start["text"] = "Play"
-		self.start["command"] = self.playMovie
-		self.start.grid(row=1, column=1, padx=2, pady=2)
-		
-		# Create Pause button			
-		self.pause = Button(self.master, width=20, padx=3, pady=3)
-		self.pause["text"] = "Pause"
-		self.pause["command"] = self.pauseMovie
-		self.pause.grid(row=1, column=2, padx=2, pady=2)
-		
-		# Create Teardown button
-		self.teardown = Button(self.master, width=20, padx=3, pady=3)
-		self.teardown["text"] = "Teardown"
-		self.teardown["command"] =  self.exitClient
-		self.teardown.grid(row=1, column=3, padx=2, pady=2)
-		
-		# Create a label to display the movie
-		self.label = Label(self.master, height=19)
-		self.label.grid(row=0, column=0, columnspan=4, sticky=W+E+N+S, padx=5, pady=5) 
+		# Configurar o layout da janela
+		self.master.title("Video Streaming Client")
+		self.master.configure(bg="#f0f0f0")
+
+		# Título
+		self.title = Label(self.master, text="Streaming Player", font=("Arial", 18, "bold"), bg="#f0f0f0")
+		self.title.grid(row=0, column=0, columnspan=5, pady=10)
+
+		# Área para exibir o vídeo
+		self.label = Label(self.master, height=19, bg="black", relief=SUNKEN)
+		self.label.grid(row=1, column=0, columnspan=5, sticky=W+E+N+S, padx=10, pady=20)
+
+		# Estilo moderno para os botões
+		button_style = {
+			"width": 20,
+			"padx": 5,
+			"pady": 5,
+			"font": ("Arial", 12),
+			"bg": "#cccccc",  # Gradiente cinza claro para branco
+			"fg": "black",
+		}
+
+		# Botão Play
+		self.start = Button(self.master, text="Play", command=self.playMovie, **button_style)
+		self.start.grid(row=2, column=1, padx=5, pady=10)
+
+		# Botão Pause
+		self.pause = Button(self.master, text="Pause", command=self.pauseMovie, **button_style)
+		self.pause.grid(row=2, column=2, padx=5, pady=10)
+  
+		# Botão Switch
+		self.switch = Button(self.master, text="Conteúdo", command=self.switchVideo, **button_style)
+		self.switch.grid(row=2, column=3, padx=5, pady=10)
+  		
+
+		# Botão Teardown (vermelho)
+		self.teardown = Button(self.master, text="Teardown", command=self.exitClient, width=20, padx=5, pady=5, 
+							font=("Arial", 12), bg="#F44336", fg="white")
+		self.teardown.grid(row=2, column=4, padx=5, pady=10)
 	
 	def setupMovie(self):
 		"""Setup button handler."""
-		if self.state == self.INIT:
+		if self.state == self.READY or self.state == self.INIT:
 			self.sendRtspRequest(self.SETUP)
+			print("Processing Setup for movie: "+ self.fileName)
 	
 	def exitClient(self):
 		"""Teardown button handler."""
@@ -79,7 +102,53 @@ class Client:
 		"""Pause button handler."""
 		if self.state == self.PLAYING:
 			self.sendRtspRequest(self.PAUSE)
-	
+   
+	def switchVideo(self):
+		"""Open a window to select a new video from the server's list."""
+		self.pauseMovie()
+		# Cria uma nova janela para seleção de vídeo
+		self.switch_window = Toplevel(self.master)
+		self.switch_window.title("Selecionar Vídeo")
+
+		# Cria uma variável para armazenar a seleção do usuário
+		self.selected_video = StringVar(self.switch_window)
+		self.selected_video.set(self.videoList[0])  # Valor padrão
+
+		# Cria um menu suspenso (OptionMenu) para selecionar o vídeo
+		Label(self.switch_window, text="Escolha o vídeo:").pack(pady=10)
+		OptionMenu(self.switch_window, self.selected_video, *self.videoList).pack()
+
+		# Botão para confirmar a seleção
+		Button(self.switch_window, text="Confirmar", command=self.confirmSwitch).pack(pady=10)
+
+	def confirmSwitch(self):
+		"""Confirma a seleção de vídeo e altera o vídeo no servidor."""
+		selected_video = self.selected_video.get()
+		
+		if selected_video in self.videoList:
+			# Atualiza o vídeo selecionado e reconfigura no servidor
+			self.fileName = selected_video
+			
+			if self.videoN == 0:
+				# Primeiro vídeo a ser escolhido: envia uma solicitação SETUP
+				print("Configurando o primeiro vídeo:", self.fileName)
+				self.sendRtspRequest(self.SETUP)
+				self.videoN = 1  # Atualiza o contador para indicar que um vídeo foi escolhido
+			else:
+				# Envia uma solicitação SWITCH ao servidor
+				print("Mudando para o vídeo:", self.fileName)
+				self.sendRtspRequest(self.SWITCH)
+
+			# Para a thread existente do listenRtp, se estiver rodando
+			if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():
+				self.playEvent.set()  # Sinaliza para parar a thread
+				self.rtp_thread.join()  # Espera a thread terminar
+			
+			self.switch_window.destroy()  # Fecha a janela de seleção
+		else:
+			messagebox.showerror("Erro", "Vídeo não encontrado na lista.")
+			self.switch_window.destroy()
+		
 	def playMovie(self):
 		"""Play button handler."""
 		if self.state == self.READY:
@@ -88,12 +157,12 @@ class Client:
 			threading.Thread(target=self.listenRtp).start()
 			self.playEvent = threading.Event()
 			self.playEvent.clear()
-			#self.sendRtspRequest(self.PLAY)
+			self.sendRtspRequest(self.PLAY)
+			self.videoN=1
+			self.frameNbr=0
 	
 	def listenRtp(self):		
 		"""Listen for RTP packets."""
-		frame_data = b'' #Buffer to store the frame data
-
 		while True:
 			try:
 				packet = self.rtpSocket.recv(20480)
@@ -137,26 +206,37 @@ class Client:
 		photo = ImageTk.PhotoImage(Image.open(imageFile))
 		self.label.configure(image = photo, height=288) 
 		self.label.image = photo
-
+		
 	def connectToServer(self):
-		"""Connect to the Server. Start a new RTSP/TCP session."""
+		"""Connect to the Server. Start a new RTSP/TCP session and receive the video list."""
 		self.rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		try:
 			self.rtspSocket.connect((self.serverAddr, self.serverPort))
+			print("Client joined server!")
+			self.receiveVideoList()  
 		except:
-			tkMessageBox.showwarning('Connection Failed', 'Connection to \'%s\' failed.' %self.serverAddr)
+			tkinter.messagebox.showwarning('Connection Failed', 'Connection to \'%s\' failed.' % self.serverAddr)
+
+	def receiveVideoList(self):
+		"""Receive and process the list of videos sent by the server."""
+		videoListData = self.rtspSocket.recv(1024).decode("utf-8")  # Recebe até 1024 bytes
+		self.videoList = videoListData.splitlines()  # Divide a lista em linhas
+
+		print("Lista de vídeos disponível:")
+		for video in self.videoList:
+			print(video)
 	
 	def sendRtspRequest(self, requestCode):
 		"""Send RTSP request to the server."""    
 		if requestCode == self.SETUP and self.state == self.INIT:
 			threading.Thread(target=self.recvRtspReply).start()
-			# Update RTSP sequence number
+			
 			self.rtspSeq += 1
 
-			# Write the RTSP request to be sent
-			request = f"SETUP RTSP/1.0\nCSeq: {self.rtspSeq}\nTransport: RTP/UDP; client_port= {self.rtpPort}\n"
-
-			# Keep track of the sent request
+			request = (f"SETUP {self.fileName} RTSP/1.0\n"
+                   f"CSeq: {self.rtspSeq}\n"
+                   f"Transport: RTP/UDP; client_port= {self.rtpPort}\n")
+			
 			self.requestSent = self.SETUP
 
 		elif requestCode == self.PLAY and self.state == self.READY:
@@ -176,7 +256,14 @@ class Client:
 			request = f"TEARDOWN RTSP/1.0\nCSeq: {self.rtspSeq}\nSession: {self.sessionId}\n"
 			self.requestSent = self.TEARDOWN
 			print('\nTEARDOWN event\n')
+   
+		elif requestCode == self.SWITCH:
+			self.rtspSeq += 1
+			request = f"SWITCH {self.fileName} RTSP/1.0\nCSeq: {self.rtspSeq}\nSession: {self.sessionId}\n"
+			self.requestSent = self.SWITCH
+			print('\nSWITCH event\n')
 
+		
 		else:
 			return
 
@@ -258,3 +345,5 @@ class Client:
 		except subprocess.CalledProcessError as e: 
 			print(f"Error getting IP: {e}")
 			return None 
+
+

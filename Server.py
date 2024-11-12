@@ -8,22 +8,24 @@ class Server:
 	def main(self):
 		try:
 			SERVER_PORT = int(sys.argv[1])
-			filename = sys.argv[2]
       
 		except:
 			print("[Usage: Server.py Server_port]\n")
 		overlay_builder = Overlay_Builder(SERVER_PORT)
 		overlay_builder.run()
 
+
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		rtspSocket.bind(('', SERVER_PORT))
 		rtspSocket.listen(5)
 
-		
-		#while True:
+		print("Server On! Port: " + str(SERVER_PORT))
+		rtspSocket.listen(5)     
+  
 		clientInfo = {}
-		#clientInfo['rtspSocket'] = rtspSocket.accept()
-		ServerWorker(clientInfo,filename).run()		
+		clientInfo['rtspSocket'] = rtspSocket.accept()
+		ServerWorker(clientInfo).run()	
+		print("Client Joined!")	
 
 if __name__ == "__main__":
 	(Server()).main()
