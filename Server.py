@@ -22,7 +22,7 @@ class Server:
 		rtspSocket.listen(5)     
   
 		clientInfo = {}
-		clientInfo['rtspSocket'] = rtspSocket.accept()
+		#clientInfo['rtspSocket'] = rtspSocket.accept()
 		ServerWorker(clientInfo).run()	
 		print("Client Joined!")	
 
