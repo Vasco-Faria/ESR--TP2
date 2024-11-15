@@ -1,0 +1,6 @@
+{
+    "server_address": "10.0.3.10",    
+    "server_port": 8000,                 
+    "pop_check_interval": 10,            
+    "timeout": 1                         
+}

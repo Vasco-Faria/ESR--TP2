@@ -1,5 +1,7 @@
 from tkinter import *
+
 import tkinter.messagebox as tkMessageBox
+import socket, threading, sys, traceback, os, json, subprocess, base64
 from tkinter.simpledialog import askstring
 from PIL import Image, ImageTk
 import socket, threading, sys, traceback, os, json, subprocess, base64
