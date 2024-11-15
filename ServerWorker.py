@@ -1,3 +1,4 @@
+import os
 from random import randint
 import sys, traceback, threading, socket, json, base64, time 
 
@@ -10,7 +11,6 @@ class ServerWorker:
 	PLAY = 'PLAY'
 	PAUSE = 'PAUSE'
 	TEARDOWN = 'TEARDOWN'
- 
 	
 	INIT = 0
 	READY = 1
@@ -24,20 +24,18 @@ class ServerWorker:
 	PACKET_SIZE = 14000
 	
 	clientInfo = {}
- 
+	videoFolderPath = "Videos" # Path to the folder containing videos
  
 	
-	def __init__(self, clientInfo,filename):
+	def __init__(self, clientInfo):
 		self.clientInfo = clientInfo
-		self.filename = filename
-		self.videoStream = VideoStream(filename)
+		#self.sendVideoList()
 		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.rtpSocket.bind(('', 25000))
 			
 	def run(self):
-		#threading.Thread(target=self.recvRtspRequest).start()
 		threading.Thread(target=self.recvRtpRequest).start()
-
+	
 	def recvRtpRequest(self):
 		"""Receive RTP request from the oNode."""
 		while True:
@@ -47,92 +45,138 @@ class ServerWorker:
 				data = json.loads(packet.decode("utf-8"))
 				if data["data"]:
 					print(f"Data received:\n {data}")
+					video_path = os.path.join(self.videoFolderPath, data["filename"])
+					if os.path.isfile(video_path):
+						# Initialize new video stream
+						self.videoStream = VideoStream(video_path)
 					#self.processRtspRequest(data)
 					time.sleep(5)
 					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
 			except socket.timeout:
 				continue
 	
-	def recvRtspRequest(self):
-		"""Receive RTSP request from the client."""
-		connSocket = self.clientInfo['rtspSocket'][0]
-		while True:            
-			packet = connSocket.recv(256)
-			data = json.loads(packet.decode("utf-8"))
-			if data["data"]:
-				print(f"Data received:\n {data}")
-				self.processRtspRequest(data)
-	
-	def processRtspRequest(self, packet):
+	def processRtspRequest(self, data):
 		"""Process RTSP request sent from the client."""
 		# Get the request type
-		data = packet["data"]
 		request = data.split('\n')
 		line1 = request[0].split(' ')
 		requestType = line1[0]
 		
+		# Get the media file name
+		filename = line1[1]
 		
 		# Get the RTSP sequence number 
-		seq = request[1].split(' ')
+		seq = request[1].split(' ')[1]
+		
+		print("Current State:", self.state)
 		
 		# Process SETUP request
 		if requestType == self.SETUP:
-			if self.state == self.INIT:
-				# Update state
-				print("processing SETUP\n")
+			# Stop any ongoing streaming event before setting up a new video
+			if 'event' in self.clientInfo:
+				if not self.clientInfo['event'].is_set():
+					print("Stopping previous streaming event.")
+					self.clientInfo['event'].set()  # Signal to stop streaming
+					self.clientInfo['worker'].join()  # Wait for the thread to finish
+			
+			# Proceed with new setup if in INIT, PLAYING, or READY states
+			if self.state in [self.INIT, self.PLAYING, self.READY]:
+				print("Processing SETUP\n")
 				
-				try:
-					#self.clientInfo['videoStream'] = VideoStream(self.filename)
-					print("Video a enviar: ", self.filename)
-					self.state = self.READY
-				except IOError:
-					self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
-				
-				# Generate a randomized RTSP session ID
-				self.clientInfo['session'] = randint(100000, 999999)
-				
-				# Send RTSP reply
-				self.replyRtsp(self.OK_200, seq[1])
-				
-				# Get the RTP/UDP port from the last line
-				self.clientInfo['rtpPort'] = request[2].split(' ')[3]
+				video_path = os.path.join(self.video_folder, filename)
+				if os.path.isfile(video_path):
+					try:
+						# Initialize new video stream
+						self.clientInfo['videoStream'] = VideoStream(video_path)
+						self.state = self.READY
+						
+						# Generate a randomized RTSP session ID
+						self.clientInfo['session'] = randint(100000, 999999)
+						
+						# Get the RTP/UDP port from the request (assuming it's on the third line)
+						self.clientInfo['rtpPort'] = request[2].split(' ')[3]
+						
+						# Send RTSP reply
+						self.replyRtsp(self.OK_200, seq)
+					except IOError:
+						self.replyRtsp(self.FILE_NOT_FOUND_404, seq)
+				else:
+					print("File not found: " + video_path)
+					self.replyRtsp(self.FILE_NOT_FOUND_404, seq)
 		
-		# Process PLAY request 		
+		# Process PLAY request
 		elif requestType == self.PLAY:
 			if self.state == self.READY:
-				print("processing PLAY\n")
+				print("Processing PLAY\n")
 				self.state = self.PLAYING
 				
 				# Create a new socket for RTP/UDP
 				self.clientInfo["rtpSocket"] = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 				
-				self.replyRtsp(self.OK_200, seq[1])
+				# Send RTSP reply
+				self.replyRtsp(self.OK_200, seq)
 				
 				# Create a new thread and start sending RTP packets
 				self.clientInfo['event'] = threading.Event()
-				self.clientInfo['worker']= threading.Thread(target=self.sendRtp) 
+				self.clientInfo['worker'] = threading.Thread(target=self.sendRtp) 
 				self.clientInfo['worker'].start()
 		
 		# Process PAUSE request
 		elif requestType == self.PAUSE:
 			if self.state == self.PLAYING:
-				print("processing PAUSE\n")
+				print("Processing PAUSE\n")
 				self.state = self.READY
 				
+				# Set the event to stop RTP streaming
 				self.clientInfo['event'].set()
-			
-				self.replyRtsp(self.OK_200, seq[1])
+				
+				# Send RTSP reply
+				self.replyRtsp(self.OK_200, seq)
 		
 		# Process TEARDOWN request
 		elif requestType == self.TEARDOWN:
-			print("processing TEARDOWN\n")
-
+			print("Processing TEARDOWN\n")
+			
+			# Set the event to stop RTP streaming
 			self.clientInfo['event'].set()
 			
-			self.replyRtsp(self.OK_200, seq[1])
+			# Send RTSP reply
+			self.replyRtsp(self.OK_200, seq)
 			
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
+			
+			# Reset client state
+			self.state = self.INIT
+			print("Client has been reset.")
+			
+			
+		elif requestType == "SWITCH":
+			if self.state in [self.PLAYING, self.READY]:
+				print("Processing SWITCH to video:", filename)
+				self.clientInfo['event'].set()  # Stop current streaming event
+				
+				# Wait for the current streaming thread to finish
+				if 'worker' in self.clientInfo:
+					self.clientInfo['worker'].join()
+				
+				# Set up the new video stream
+				video_path = os.path.join(self.video_folder, filename)
+				if os.path.isfile(video_path):
+					try:
+						self.clientInfo['videoStream'] = VideoStream(video_path)
+						self.state = self.READY
+						
+						# Send RTSP reply
+						self.replyRtsp(self.OK_200, seq)
+					except IOError:
+						self.replyRtsp(self.FILE_NOT_FOUND_404, seq)
+				else:
+					print("File not found: " + video_path)
+					self.replyRtsp(self.FILE_NOT_FOUND_404, seq)
+			else:
+				print("Cannot switch video in current state:", self.state)
+				self.replyRtsp(self.CON_ERR_500, seq)
 			
 	def sendRtp(self, path):
 		"""Send RTP packets over UDP."""
@@ -185,7 +229,6 @@ class ServerWorker:
 		extension = 0
 		cc = 0
 		marker = 1 if len(payload) < self.PACKET_SIZE else 0
-		#pt = 26 # MJPEG type
 		seqnum = frameNbr
 		ssrc = 0 
 		
