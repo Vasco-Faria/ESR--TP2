@@ -22,10 +22,8 @@ class Server:
 		print("Server On! Port: " + str(SERVER_PORT))
 		rtspSocket.listen(5)     
   
-		clientInfo = {}
-		clientInfo['rtspSocket'] = rtspSocket.accept()
-		ServerWorker(clientInfo).run()	
-		print("Client Joined!")	
+		
+		ServerWorker().run()	
 
 if __name__ == "__main__":
 	(Server()).main()
