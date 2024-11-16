@@ -47,43 +47,66 @@ class Client:
         """Build GUI."""
         # Configurar o layout da janela
         self.master.title("Video Streaming Client")
-        self.master.configure(bg="#f0f0f0")
+        self.master.configure(bg="#2c3e50")  # Fundo azul-escuro moderno
 
         # Título
-        self.title = Label(self.master, text="Streaming Player", font=("Arial", 18, "bold"), bg="#f0f0f0")
-        self.title.grid(row=0, column=0, columnspan=5, pady=10)
+        self.title = Label(
+            self.master,
+            text="Streaming Player",
+            font=("Segoe UI", 20, "bold"),
+            bg="#2c3e50",
+            fg="#ecf0f1",  # Texto claro
+        )
+        self.title.grid(row=0, column=0, columnspan=5, pady=15)
 
         # Área para exibir o vídeo
-        self.label = Label(self.master, height=19, bg="black", relief=SUNKEN)
-        self.label.grid(row=1, column=0, columnspan=5, sticky=W+E+N+S, padx=10, pady=20)
+        self.label = Label(
+            self.master,
+            height=19,
+            bg="#34495e",  # Fundo cinza-escuro para a área do vídeo
+            relief="flat",
+        )
+        self.label.grid(row=1, column=0, columnspan=5, sticky="nsew", padx=20, pady=20)
 
         # Estilo moderno para os botões
         button_style = {
-            "width": 20,
-            "padx": 5,
-            "pady": 5,
-            "font": ("Arial", 12),
-            "bg": "#cccccc",  # Gradiente cinza claro para branco
-            "fg": "black",
+            "width": 15,
+            "padx": 10,
+            "pady": 10,
+            "font": ("Segoe UI", 12, "bold"),
+            "bg": "#1abc9c",  # Verde-água
+            "fg": "white",
+            "bd": 0,  # Sem bordas
+            "relief": "flat",
         }
 
         # Botão Play
-        self.start = Button(self.master, text="Play", command=self.playMovie, **button_style)
-        self.start.grid(row=2, column=1, padx=5, pady=10)
+        self.start = Button(self.master, text="▶ Play", command=self.playMovie, **button_style)
+        self.start.grid(row=2, column=1, padx=10, pady=15)
 
         # Botão Pause
-        self.pause = Button(self.master, text="Pause", command=self.pauseMovie, **button_style)
-        self.pause.grid(row=2, column=2, padx=5, pady=10)
+        self.pause = Button(self.master, text="⏸ Pause", command=self.pauseMovie, **button_style)
+        self.pause.grid(row=2, column=2, padx=10, pady=15)
 
-        # Botão Switchv
-        self.switch = Button(self.master, text="Conteúdo", command=self.switchVideo, **button_style)
-        self.switch.grid(row=2, column=3, padx=5, pady=10)
-        
+        # Botão Switch
+        self.switch = Button(self.master, text="⏩ Conteúdo", command=self.switchVideo, **button_style)
+        self.switch.grid(row=2, column=3, padx=10, pady=15)
 
         # Botão Teardown (vermelho)
-        self.teardown = Button(self.master, text="Teardown", command=self.exitClient, width=20, padx=5, pady=5, 
-                            font=("Arial", 12), bg="#F44336", fg="white")
-        self.teardown.grid(row=2, column=4, padx=5, pady=10)
+        self.teardown = Button(
+            self.master,
+            text="⏹ Teardown",
+            command=self.exitClient,
+            width=15,
+            padx=10,
+            pady=10,
+            font=("Segoe UI", 12, "bold"),
+            bg="#e74c3c",  # Vermelho
+            fg="white",
+            bd=0,
+            relief="flat",
+        )
+        self.teardown.grid(row=2, column=4, padx=10, pady=15)
     
     def setupMovie(self):
         """Setup button handler."""
@@ -115,17 +138,45 @@ class Client:
         # Cria uma nova janela para seleção de vídeo
         self.switch_window = Toplevel(self.master)
         self.switch_window.title("Selecionar Vídeo")
+        self.switch_window.configure(bg="#2c3e50")  # Fundo azul-escuro moderno
 
         # Cria uma variável para armazenar a seleção do usuário
         self.selected_video = StringVar(self.switch_window)
         self.selected_video.set(self.videoList[0])  # Valor padrão
 
         # Cria um menu suspenso (OptionMenu) para selecionar o vídeo
-        Label(self.switch_window, text="Escolha o vídeo:").pack(pady=10)
-        OptionMenu(self.switch_window, self.selected_video, *self.videoList).pack()
+        Label(
+            self.switch_window,
+            text="Escolha o vídeo:",
+            font=("Segoe UI", 14),
+            bg="#2c3e50",
+            fg="#ecf0f1",
+        ).pack(pady=10)
+
+        menu = OptionMenu(self.switch_window, self.selected_video, *self.videoList)
+        menu.config(
+            font=("Segoe UI", 12),
+            bg="#34495e",
+            fg="white",
+            bd=0,
+            highlightthickness=0,
+            relief="flat",
+        )
+        menu.pack(pady=10)
 
         # Botão para confirmar a seleção
-        Button(self.switch_window, text="Confirmar", command=self.confirmSwitch).pack(pady=10)
+        Button(
+            self.switch_window,
+            text="Confirmar",
+            command=self.confirmSwitch,
+            font=("Segoe UI", 12, "bold"),
+            bg="#1abc9c",
+            fg="white",
+            bd=0,
+            relief="flat",
+            padx=15,
+            pady=5,
+        ).pack(pady=10)
 
     def confirmSwitch(self):
         """Confirma a seleção de vídeo e altera o vídeo no servidor."""
