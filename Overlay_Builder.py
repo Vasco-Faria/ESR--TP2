@@ -9,6 +9,7 @@ class Overlay_Builder:
 		self.overlay = {}
 		self.overlay['neighbours'] = {}
 		self.load_config()
+		self.computePop()
 
 	def load_config(self):
 		try:
@@ -34,6 +35,29 @@ class Overlay_Builder:
 	
 	def getNeighbours(self, host):
 		return self.getOverlay()['neighbours'][host] if host in self.getOverlay()['neighbours'].keys() else []
+	
+	def computePop(self):
+		temp = {}
+		self.pop = []
+		
+		for (server_node, node_list) in self.overlay['neighbours'].items():
+			if server_node != 'self': 
+				if server_node in temp:
+					temp[server_node] += 1
+				else:
+					temp[server_node] = 0
+					
+			for node in node_list:
+				if node in temp:
+					temp[node] += 1
+				else:
+					temp[node] = 0
+		
+		for node in temp: 
+			if temp[node] == 0: 
+				self.pop.append(node)
+
+		print(self.pop)
 	
 	def build_initPacket(self, nodeIP):
 		return {

@@ -24,7 +24,7 @@ class Server:
 		clientInfo = {}
 		#clientInfo['rtspSocket'] = rtspSocket.accept()
 		ServerWorker(clientInfo).run()	
-		print("Client Joined!")	
+		print("Client Joined!")
 
 if __name__ == "__main__":
 	(Server()).main()
