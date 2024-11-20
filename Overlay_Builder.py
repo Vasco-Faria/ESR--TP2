@@ -57,7 +57,7 @@ class Overlay_Builder:
 			if temp[node] == 0: 
 				self.pop.append(node)
 
-		print(self.pop)
+		print(f"POP's: {self.pop}")
 	
 	def build_initPacket(self, nodeIP):
 		return {
