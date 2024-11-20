@@ -4,10 +4,12 @@ import tkinter.messagebox as tkMessageBox
 import socket, threading, sys, traceback, os, json, subprocess, base64
 from tkinter.simpledialog import askstring
 from PIL import Image, ImageTk
-import socket, threading, sys, traceback, os
+
 from tkinter import Toplevel, OptionMenu, StringVar, Button, Label, messagebox
 from oClient import oClient
 import time
+import socket, threading, sys, traceback, os, json, subprocess, base64
+
 
 from RtpPacket import RtpPacket
 
@@ -15,6 +17,7 @@ CACHE_FILE_NAME = "cache-"
 CACHE_FILE_EXT = ".jpg"
 
 class Client:
+
     INIT = 0
     READY = 1
     PLAYING = 2

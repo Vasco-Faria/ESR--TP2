@@ -1,18 +1,18 @@
 import socket, json, threading, sys
 from queue import Queue
+from oPop import oPop
 
 class oNode: 
-	def __init__(self, host, client_port=5050, manage_port=6010, stream_port=25000):
+	def __init__(self, host, manage_port=6010, stream_port=25000):
 		self.IP = host
-		self.client_port = client_port
 		self.manage_port = manage_port
 		self.stream_port = stream_port
 		self.upstream_neighbours = set()
 		self.downstream_neighbours = set()
 		self.management_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
+		self.oPop = None
 		self.run()
 
 	def run(self): 
@@ -52,13 +52,6 @@ class oNode:
 
 		return report
 	
-	def startClientSocket(self):
-		#The node is not a server to another oNode
-		if len(self.downstream_neighbours) == 0: 
-			print("Starting client socket")
-			self.client_socket.bind((self.IP, self.client_port))
-			self.client_thread = threading.Thread(target=self.listenClient).start()
-	
 	def parseManagement(self, packet):
 		try:
 			data = json.loads(packet)
@@ -71,7 +64,7 @@ class oNode:
 			elif data["type"] == "checkcomm":
 				self.upstream_neighbours.add(data["from"])
 				self.stream_port = data["data"]["stream_port"]
-				self.startClientSocket()
+				self.oPop = oPop(self.IP)
 		
 		except json.JSONDecodeError:
 			print("Received invalid JSON data.")
@@ -97,44 +90,13 @@ class oNode:
 		except Exception as e: 
 			print(f"Error (listenManagement): {e}")
 	
-	def parseClient(self, packet): 
-		try:
-			data = json.loads(packet)
-			
-			if data["type"] == "request":
-				data["path"].append(self.IP)
-				print(f"STREAM DATA: {data}")
-				self.stream_queueMessages.put(data)
-
-		except json.JSONDecodeError:
-			print("Received invalid JSON data.")
-		except Exception as e:
-			print(f"Error handling data: {e}")
-
-	def listenClient(self): 
-		try:
-			self.client_socket.listen()
-			print(f"[THREAD {self.client_socket.getsockname()}]Node listening")
-
-			while True: 	#Run if it doenst have downstream neighbour (oNodes that are clients) 	
-				conn, (fromIP, fromPort) = self.client_socket.accept()
-				print(f"[THREAD {self.client_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
-				data = conn.recv(1024).decode('utf-8')
-				
-				self.parseClient(data)
-
-				self.client_socket.close()
-
-		except Exception as e: 
-			print(f"Error (listenClient): {e}")
-	
 	def listenStream(self):
 		try:
 			print(f"[THREAD {self.stream_socket.getsockname()}]Node listening")
 
 			while True:
-				while not self.stream_queueMessages.empty():
-					packet = self.stream_queueMessages.get()
+				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
+					packet = self.oPop.stream_queueMessages.get() if self.oPop is not None else self.stream_queueMessages.get()	
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {len(packet)}\nTo:{toIP}:{self.stream_port}]")
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
@@ -152,7 +114,12 @@ class oNode:
 					if data["type"] == "request":
 						data["path"].append(self.IP)
 						print(f"STREAM DATA: {data}")
-						self.stream_queueMessages.put(data)
+
+						if self.oPop is None:
+							self.stream_queueMessages.put(data)
+						else:
+							self.stream_queueMessages.put(data)	
+						
 
 					elif data["type"] == "response": 
 						data["path"].pop()

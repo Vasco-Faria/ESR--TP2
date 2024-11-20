@@ -14,7 +14,6 @@ class Server:
 		overlay_builder = Overlay_Builder(SERVER_PORT)
 		overlay_builder.run()
 
-
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		rtspSocket.bind(('', SERVER_PORT))
 		rtspSocket.listen(5)
@@ -22,8 +21,10 @@ class Server:
 		print("Server On! Port: " + str(SERVER_PORT))
 		rtspSocket.listen(5)     
   
+
 		
 		ServerWorker().run()	
+
 
 if __name__ == "__main__":
 	(Server()).main()
