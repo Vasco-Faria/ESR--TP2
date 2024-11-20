@@ -9,7 +9,7 @@ class Overlay_Builder:
 		self.overlay = {}
 		self.overlay['neighbours'] = {}
 		self.load_config()
-		self.computePop()
+		
 
 	def load_config(self):
 		try:
@@ -57,7 +57,7 @@ class Overlay_Builder:
 			if temp[node] == 0: 
 				self.pop.append(node)
 
-		print(f"POP's: {self.pop}")
+		return self.pop
 	
 	def build_initPacket(self, nodeIP):
 		return {

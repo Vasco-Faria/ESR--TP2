@@ -13,6 +13,7 @@ class Server:
 			print("[Usage: Server.py Server_port]\n")
 		overlay_builder = Overlay_Builder(SERVER_PORT)
 		overlay_builder.run()
+		pop_list= overlay_builder.computePop()
 
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		rtspSocket.bind(('', SERVER_PORT))
@@ -23,7 +24,7 @@ class Server:
   
 
 		
-		ServerWorker().run()	
+		ServerWorker(pop_list).run()	
 
 
 if __name__ == "__main__":
