@@ -20,73 +20,65 @@ class ServerWorker:
 	PLAYING = 2
 	state = INIT
 
+	OK_200 = 0
+	FILE_NOT_FOUND_404 = 1
+	CON_ERR_500 = 2
 
-    
-    
+	PACKET_SIZE = 14000
+	pop_list=[{}]
+	
+	videoFolderPath = "Videos" 
 
-   OK_200 = 0
-   FILE_NOT_FOUND_404 = 1
-   CON_ERR_500 = 2
+	def __init__(self):
+		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.rtpSocket.bind(('', 25000))
 
+		self.udpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		self.udpSocket.bind(('', 8000))  
+		
+	def run(self):
+		#threading.Thread(target=self.recvRtspRequest).start()
+		threading.Thread(target=self.recvRtpRequest).start()
+		threading.Thread(target=self.listen_for_requests).start()
 
-    PACKET_SIZE = 14000
-    pop_list=[{}]
-    
-    videoFolderPath = "Videos" 
+	def listen_for_requests(self):
+		'''Escuta pedidos UDP do oClient'''
+		print("Servidor aguardando pedidos UDP...")
+		while True:
+			try:
+				data, addr = self.udpSocket.recvfrom(4096)  # Recebe pacotes UDP
+				request = data.decode()
+				
+				if request == "GET_POP_LIST":
+					self.send_pop_list(addr)    
+				elif request == "GET_VIDEO_LIST":
+					self.send_video_list(addr)
+				else:
+					print(f"Pedido desconhecido: {request}")
+			except Exception as e:
+				print(f"Erro ao processar o pedido UDP: {e}")
+				break
 
+	def send_pop_list(self, addr):
+		'''Envia a lista de PoPs para o oClient'''
+		try:
+			pop_list_json = json.dumps(self.pop_list)  # Converte a lista de PoPs em JSON
+			self.udpSocket.sendto(pop_list_json.encode(), addr)
+			print("Lista de PoPs enviada para o oClient.")
+		except Exception as e:
+			print(f"Erro ao enviar lista de PoPs: {e}")
 
-    
-    def __init__(self):
-        self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.rtpSocket.bind(('', 25000))
-
-        self.udpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udpSocket.bind(('', 8000))  
-
-        
-    def run(self):
-        #threading.Thread(target=self.recvRtspRequest).start()
-        threading.Thread(target=self.recvRtpRequest).start()
-        threading.Thread(target=self.listen_for_requests).start()
-
-    def listen_for_requests(self):
-        '''Escuta pedidos UDP do oClient'''
-        print("Servidor aguardando pedidos UDP...")
-        while True:
-            try:
-                data, addr = self.udpSocket.recvfrom(4096)  # Recebe pacotes UDP
-                request = data.decode()
-                
-                if request == "GET_POP_LIST":
-                    self.send_pop_list(addr)    
-                elif request == "GET_VIDEO_LIST":
-                    self.send_video_list(addr)
-                else:
-                    print(f"Pedido desconhecido: {request}")
-            except Exception as e:
-                print(f"Erro ao processar o pedido UDP: {e}")
-                break
-
-    def send_pop_list(self, addr):
-        '''Envia a lista de PoPs para o oClient'''
-        try:
-            pop_list_json = json.dumps(self.pop_list)  # Converte a lista de PoPs em JSON
-            self.udpSocket.sendto(pop_list_json.encode(), addr)
-            print("Lista de PoPs enviada para o oClient.")
-        except Exception as e:
-            print(f"Erro ao enviar lista de PoPs: {e}")
-
-    def send_video_list(self, addr):
-        '''Envia a lista de vídeos para o oClient'''
-        try:
-            # Lista os vídeos na pasta e converte para JSON
-            videos = os.listdir(self.video_folder)
-            video_list_json = json.dumps(videos)  # Enviar como JSON
-            self.udpSocket.sendto(video_list_json.encode(), addr)
-            print("Lista de vídeos enviada para o oClient:", video_list_json)
-        except Exception as e:
-            print(f"Erro ao enviar lista de vídeos: {e}")
-    
+	def send_video_list(self, addr):
+		'''Envia a lista de vídeos para o oClient'''
+		try:
+			# Lista os vídeos na pasta e converte para JSON
+			videos = os.listdir(self.video_folder)
+			video_list_json = json.dumps(videos)  # Enviar como JSON
+			self.udpSocket.sendto(video_list_json.encode(), addr)
+			print("Lista de vídeos enviada para o oClient:", video_list_json)
+		except Exception as e:
+			print(f"Erro ao enviar lista de vídeos: {e}")
+	
 
 	def recvRtpRequest(self):
 		"""Receive RTP request from the oNode."""

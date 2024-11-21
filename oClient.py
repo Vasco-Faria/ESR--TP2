@@ -1,7 +1,4 @@
-import socket
-import json
-import time
-
+import socket, time, json, subprocess, threading
 
 class oClient:
 
