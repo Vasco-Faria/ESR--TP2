@@ -42,15 +42,10 @@ class Overlay_Builder:
 		
 		for (server_node, node_list) in self.overlay['neighbours'].items():
 			if server_node != 'self': 
-				if server_node in temp:
-					temp[server_node] += 1
-				else:
-					temp[server_node] = 0
+				temp[server_node] = 1
 					
 			for node in node_list:
-				if node in temp:
-					temp[node] += 1
-				else:
+				if node not in temp:
 					temp[node] = 0
 		
 		for node in temp: 

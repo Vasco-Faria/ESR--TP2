@@ -65,7 +65,8 @@ class oNode:
 			elif data["type"] == "checkcomm":
 				self.upstream_neighbours.add(data["from"])
 				self.stream_port = data["data"]["stream_port"]
-				self.oPop = oPop(self.IP)
+				if self.oPop == None: 
+					self.oPop = oPop(self.IP)
 		
 		except json.JSONDecodeError:
 			print("Received invalid JSON data.")
