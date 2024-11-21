@@ -1,10 +1,11 @@
 import socket, json, threading, sys
 from queue import Queue
 from oPop import oPop
+from NetworkFunctions import getSelfIP
 
 class oNode: 
-	def __init__(self, host, manage_port=6010, stream_port=25000):
-		self.IP = host
+	def __init__(self, manage_port=6010, stream_port=25000):
+		self.IP = getSelfIP()
 		self.manage_port = manage_port
 		self.stream_port = stream_port
 		self.upstream_neighbours = set()
@@ -139,10 +140,6 @@ class oNode:
 			print(f"Error (listenStream): {e}")
 
 if __name__ == "__main__":
-	try:
-		selfIP = sys.argv[1]
-	except:
-		print("[Usage: oNode.py Self_IP]\n")	
 
 	#Init oNode
-	node = oNode(selfIP)
+	node = oNode()

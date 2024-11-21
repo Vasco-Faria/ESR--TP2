@@ -1,7 +1,7 @@
 import socket, json, os
 
 class Overlay_Builder: 
-	def __init__(self, stream_port, host='10.0.5.10', config_file='overlay.build.json', manage_port=6010):
+	def __init__(self, stream_port, host, config_file='overlay.build.json', manage_port=6010):
 		self.IP = host
 		self.stream_port = stream_port
 		self.manage_port = manage_port

@@ -2,8 +2,9 @@ import sys, socket
 
 from ServerWorker import ServerWorker
 from Overlay_Builder import Overlay_Builder
+from NetworkFunctions import getSelfIP
 
-class Server:	
+class Server:
 	
 	def main(self):
 		try:
@@ -11,21 +12,21 @@ class Server:
       
 		except:
 			print("[Usage: Server.py Server_port]\n")
-		overlay_builder = Overlay_Builder(SERVER_PORT)
+		
+		hostIP = getSelfIP()
+		overlay_builder = Overlay_Builder(SERVER_PORT, hostIP)
 		overlay_builder.run()
 		pop_list= overlay_builder.computePop()
+		print(f"POP's: {pop_list}")
 
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		rtspSocket.bind(('', SERVER_PORT))
 		rtspSocket.listen(5)
 
 		print("Server On! Port: " + str(SERVER_PORT))
-		rtspSocket.listen(5)     
-  
-
+		rtspSocket.listen(5)  
 		
-		ServerWorker(pop_list).run()	
-
+		ServerWorker(pop_list).run()
 
 if __name__ == "__main__":
 	(Server()).main()
