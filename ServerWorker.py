@@ -14,7 +14,7 @@ class ServerWorker:
 	PLAY = 'PLAY'
 	PAUSE = 'PAUSE'
 	TEARDOWN = 'TEARDOWN'
-	
+
 	INIT = 0
 	READY = 1
 	PLAYING = 2
@@ -26,15 +26,21 @@ class ServerWorker:
 
 	PACKET_SIZE = 14000
 	pop_list=[{}]
-	
-	videoFolderPath = "Videos" 
 
-	def __init__(self):
+	video_folder = "Videos" 
+
+
+
+	def __init__(self,pop_list):
 		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.rtpSocket.bind(('', 25000))
 
 		self.udpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.udpSocket.bind(('', 8000))  
+
+		self.pop_list=pop_list
+		
+
 		
 	def run(self):
 		#threading.Thread(target=self.recvRtspRequest).start()
@@ -53,6 +59,7 @@ class ServerWorker:
 					self.send_pop_list(addr)    
 				elif request == "GET_VIDEO_LIST":
 					self.send_video_list(addr)
+					
 				else:
 					print(f"Pedido desconhecido: {request}")
 			except Exception as e:
@@ -76,9 +83,11 @@ class ServerWorker:
 			video_list_json = json.dumps(videos)  # Enviar como JSON
 			self.udpSocket.sendto(video_list_json.encode(), addr)
 			print("Lista de vídeos enviada para o oClient:", video_list_json)
+
+
 		except Exception as e:
 			print(f"Erro ao enviar lista de vídeos: {e}")
-	
+
 
 	def recvRtpRequest(self):
 		"""Receive RTP request from the oNode."""
@@ -98,7 +107,7 @@ class ServerWorker:
 					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
 			except socket.timeout:
 				continue
-	
+
 	def processRtspRequest(self, data):
 		"""Process RTSP request sent from the client."""
 		# Get the request type

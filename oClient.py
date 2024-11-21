@@ -38,7 +38,7 @@ class oClient:
             self.pop_list = json.loads(response.decode())
             print("Lista de PoPs recebida:", self.pop_list)
 
-           
+            self.select_initial_pop()
 
         except socket.timeout:
             print("Timeout: Não foi possível obter a lista de PoPs do servidor.")
@@ -48,23 +48,21 @@ class oClient:
     def get_video_list(self):
         '''Solicita a lista de vídeos ao servidor via UDP e retorna a lista de vídeos.'''
         try:
-            # Solicitar a lista de vídeos
+           
             self.socket.sendto(b"GET_VIDEO_LIST", (self.server_address, self.server_port))
             response, _ = self.socket.recvfrom(4096)
             
-            # Exibir a resposta bruta para verificação
-            print(f"Resposta bruta do servidor: {response}")
-            
-            # Decodificar a resposta para string e remover colchetes
+           
             response_str = response.decode().replace('[', '').replace(']', '').replace('"','')
             
-            # Converter a string para uma lista separando pelas vírgulas ou qualquer separador usado
+           
             video_list = response_str.split(',')
             
-            # Remover espaços adicionais e linhas vazias
+            
             video_list = [video.strip() for video in video_list if video.strip()]
             
             print(f"Lista de vídeos processada: {video_list}")
+
             
             return video_list
         
@@ -81,38 +79,37 @@ class oClient:
 
 
     def measure_latency(self, ip):
-        '''Medir a latência do PoP'''
+        '''Medir a latência de um PoP dado seu IP.'''
         try:
             result = subprocess.run(["ping", "-c", "4", ip], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             output = result.stdout.decode()
             # Extrair a latência média
-            latency = None
             for line in output.splitlines():
                 if "avg" in line:
                     latency = float(line.split('/')[-3])
-                    break
-            if latency is None:
-                return float('inf')
-            return latency
+                    return latency
+            return float('inf')  # Caso não consiga obter a latência
         except Exception as e:
             print(f"Erro ao medir latência para {ip}: {e}")
             return float('inf')
 
-    
     def select_initial_pop(self):
-        '''Seleciona o PoP inicial com a menor latência e define como current_pop'''
-        for pop in self.pop_list:
-            pop['latency'] = self.measure_latency(pop['ip'])
-            print(f"Latência para o PoP {pop['name']} ({pop['ip']}): {pop['latency']} ms")
+        '''Seleciona o PoP inicial com a menor latência e define como current_pop.'''
+        latencies = {}
+        for ip in self.pop_list:
+            latency = self.measure_latency(ip)
+            latencies[ip] = latency
+            print(f"Latência para o PoP {ip}: {latency} ms")
 
-        # Ordena os PoPs por latência
-        self.pop_list.sort(key=lambda x: x['latency'])
-        self.current_pop = self.pop_list[0] if self.pop_list else None
+        # Ordena os IPs pela menor latência
+        sorted_pops = sorted(latencies.items(), key=lambda x: x[1])
+        self.current_pop = sorted_pops[0][0] if sorted_pops else None
 
         if self.current_pop:
-            print(f"PoP inicial selecionado: {self.current_pop['name']} ({self.current_pop['ip']})")
+            print(f"PoP inicial selecionado: {self.current_pop} com latência {latencies[self.current_pop]} ms")
         else:
             print("Nenhum PoP disponível para seleção inicial.")
+
 
 
     def monitor_current_pop(self):
