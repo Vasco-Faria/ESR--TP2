@@ -3,20 +3,23 @@ from queue import Queue
 
 class oPop: 
 	def __init__(self, host, client_port=5050):
+		print(f"POP IP {host}")
 		self.IP = host
 		self.client_port = client_port
-		self.upstream_neighbours = set()
-		self.downstream_neighbours = set()
-		self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
 		self.startClientSocket()
 	
 	def startClientSocket(self):
 		#The node is not a server to another oNode
-		if len(self.downstream_neighbours) == 0: 
-			print("Starting client socket")
+		print("Starting client socket")
+		try:
+			# Bind to the specified IP and port
 			self.client_socket.bind((self.IP, self.client_port))
 			self.client_thread = threading.Thread(target=self.listenClient).start()
+		except Exception as e:
+			print(f"Error binding client socket: {e}")
+			raise
 	
 	def parseClient(self, packet): 
 		try:
@@ -34,17 +37,14 @@ class oPop:
 
 	def listenClient(self): 
 		try:
-			self.client_socket.listen()
 			print(f"[THREAD {self.client_socket.getsockname()}]Node listening")
 
 			while True: 	#Run if it doenst have downstream neighbour (oNodes that are clients) 	
-				conn, (fromIP, fromPort) = self.client_socket.accept()
+				packet, (fromIP, fromPort) = self.client_socket.recvfrom(10240)
 				print(f"[THREAD {self.client_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
-				data = conn.recv(1024).decode('utf-8')
+				data = packet.decode('utf-8')
 				
 				self.parseClient(data)
-
-				self.client_socket.close()
 
 		except Exception as e: 
 			print(f"Error (listenClient): {e}")
