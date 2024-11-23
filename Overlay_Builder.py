@@ -6,6 +6,7 @@ class Overlay_Builder:
 		self.stream_port = stream_port
 		self.manage_port = manage_port
 		self.config_file = config_file
+		self.downstream_neighbours = set()
 		self.overlay = {}
 		self.overlay['neighbours'] = {}
 		self.load_config()
@@ -15,20 +16,14 @@ class Overlay_Builder:
 		try:
 			with open(self.config_file) as json_file:
 				data = json.load(json_file)
-				self.parse_config(data)
+				self.overlay['neighbours'] = data
+
+				print(f"Overlay: {self.overlay['neighbours']}")
 		
 		except FileNotFoundError:
 			print(f"File {self.config_file} not found")
 		except json.JSONDecodeError:
 			print(f"File {self.config_file} is not a valid JSON file")
-
-	def parse_config(self,data):
-		for key in data: 
-			if key == self.IP:
-				self.overlay['neighbours']['self'] = data[key]
-			else: 
-				self.overlay['neighbours'][key] = data[key]
-		print(f"Overlay: {self.getOverlay()}")
 
 	def getOverlay(self):
 		return self.overlay
@@ -54,12 +49,13 @@ class Overlay_Builder:
 
 		return self.pop
 	
-	def build_initPacket(self, nodeIP):
+	def build_initPacket(self, neighbours_list):
+
 		return {
-			"type": "init",
+			"type": "overlay_setup",
 			"from": self.IP,
 			"data" : {
-				"downstream_neighbours": self.getNeighbours(nodeIP),
+				"overlay_conn": json.dumps(neighbours_list),
 				"stream_port": self.stream_port
 			}}
 
@@ -74,17 +70,19 @@ class Overlay_Builder:
 	
 	def run(self):
 		print("RUNNING SERVER")
-		for neighbour_node in self.getNeighbours('self'):
+		self.downstream_neighbours = self.overlay['neighbours'].pop(self.IP)
+		for node in self.downstream_neighbours:
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				try:
-					print(f"Connecting to {neighbour_node}:{self.manage_port}")
-					s.connect((neighbour_node, self.manage_port))
-					packet = json.dumps(self.build_initPacket(neighbour_node))
+					print(f"Connecting to {node}:{self.manage_port}")
+					s.connect((node, self.manage_port))
+					packet = json.dumps(self.build_initPacket(self.overlay['neighbours']))
 					s.sendall(packet.encode('utf-8'))
 					print(f"Sent neighbours!")
 				
 					log_data = s.recv(1024).decode('utf-8')
 					print(f"Log: {log_data}")
+					s.close()
 					
 				except socket.error as e:
-					print(f"Error connecting to {neighbour_node}: {e}")
+					print(f"Error connecting to {node}: {e}")

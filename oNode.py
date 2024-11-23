@@ -27,46 +27,86 @@ class oNode:
 	def getNeighbourFromIdx(self, set, index):
 		temp = list(set)
 		return temp[index]
-		
-	def build_ReportPacket(self, array):
-		return {
-			"type":  "init_resp",
-			"from": self.IP,
-			"data": {} if len(array) <= 0 else { "error_nodes": array }
-		}
 
-	def checkNeighboursLink(self):
-		report = []
-		for neighbour_node in self.downstream_neighbours:
+	def propagateOverlay(self, overlay_conn):
+		"""
+		Propagates the overlay structure to downstream neighbors and aggregates their reports.
+		"""
+		print(f"[{self.IP}] Overlay: {overlay_conn}")
+
+		# Base case: If no downstream neighbors, stop propagation
+		if not self.downstream_neighbours:
+			print(f"[{self.IP}] No downstream neighbours. Propagation stops here.")
+			return {"status": "success", "node": self.IP}
+
+		# Thread-safe list to collect reports from all downstream neighbors
+		reports = []
+		threads = []
+		report_lock = threading.Lock()
+
+		def send_to_neighbour(neighbour):
+			"""
+			Sends overlay data to a single neighbor and collects its response.
+			"""
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				try:
-					print(f"Connecting to {neighbour_node}")
-					s.connect((neighbour_node, 6010))
-					packet = json.dumps({"type": "checkcomm", "from": self.IP, "data": { "stream_port": self.stream_port}})
+					print(f"[{self.IP}] Connecting to downstream neighbor {neighbour}")
+					s.connect((neighbour, 6010))
+
+					packet = json.dumps({
+						"type": "overlay_setup",
+						"from": self.IP,
+						"data": {
+							"overlay_conn": json.dumps(overlay_conn),
+							"stream_port": self.stream_port,
+						}
+					})
+
 					s.send(packet.encode('utf-8'))
-					print(f"Sent neighbours! {neighbour_node}")
-					s.close()
+					data = s.recv(1024).decode('utf-8')
+					response = json.loads(data)
+					print(f"[{self.IP}] Received response from {neighbour}: {response}")
 
-				except socket.error as e:
-					print(f"Error connecting to {neighbour_node}: {e}")
-					report.append(neighbour_node)
+					with report_lock:
+						reports.append(response)
 
-		return report
+				except Exception as e:
+					print(f"[{self.IP}] Error connecting to {neighbour}: {e}")
+					with report_lock:
+						reports.append({"status": "failure", "node": neighbour, "error": str(e)})
+
+		# Create and start a thread for each downstream neighbor
+		for neighbour in self.downstream_neighbours:
+			thread = threading.Thread(target=send_to_neighbour, args=(neighbour,))
+			threads.append(thread)
+			thread.start()
+
+		# Wait for all threads to complete
+		for thread in threads:
+			thread.join()
+
+		# Aggregate reports from all neighbors and include this node's status
+		final_report = {
+			"status": "success" if all(r.get("status") == "success" for r in reports) else "failure",
+			"node": self.IP,
+			"reports": reports,
+		}
+
+		print(f"[{self.IP}] Aggregated report: {final_report}")
+		return final_report
 	
 	def parseManagement(self, packet):
 		try:
 			data = json.loads(packet)
+			overlay_conn = json.loads(data["data"]["overlay_conn"])
 
-			if data["type"] == "init":
-				self.downstream_neighbours.update(data["data"]["downstream_neighbours"])
+			if data["type"] == "overlay_setup":
+				neighbours = overlay_conn.pop(self.IP)
+				self.downstream_neighbours.update(neighbours)
 				self.upstream_neighbours.add(data["from"])
 				print(f"\nDownstream neighbours: {self.downstream_neighbours} Stream_port: {self.stream_port}")
-			
-			elif data["type"] == "checkcomm":
-				self.upstream_neighbours.add(data["from"])
-				self.stream_port = data["data"]["stream_port"]
-				if self.oPop == None: 
-					self.oPop = oPop(self.IP)
+
+				return overlay_conn
 		
 		except json.JSONDecodeError:
 			print("Received invalid JSON data.")
@@ -82,9 +122,10 @@ class oNode:
 					conn, (fromIP, fromPort) = self.management_socket.accept()
 					print(f"[THREAD {self.management_socket.getsockname()}]: Accepted connection from {fromIP}:{fromPort}")
 					data = conn.recv(1024).decode('utf-8')
+					print(f"[THREAD {self.management_socket.getsockname()}]: {data}")
 
-					self.parseManagement(data)
-					report_packet = self.build_ReportPacket(self.checkNeighboursLink())
+					overlay_conn = self.parseManagement(data)
+					report_packet = self.propagateOverlay(overlay_conn)
 
 					conn.sendall(json.dumps(report_packet).encode("utf-8"))
 					conn.close()		

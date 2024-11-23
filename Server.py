@@ -16,7 +16,7 @@ class Server:
 		hostIP = getSelfIP()
 		overlay_builder = Overlay_Builder(SERVER_PORT, hostIP)
 		overlay_builder.run()
-		pop_list= overlay_builder.computePop()
+		pop_list = overlay_builder.computePop()
 		print(f"POP's: {pop_list}")
 
 		rtspSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
