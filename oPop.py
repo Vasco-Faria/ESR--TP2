@@ -2,12 +2,12 @@ import socket, json, threading
 from queue import Queue
 
 class oPop: 
-	def __init__(self, host, client_port=5050):
+	def __init__(self, host, stream_queueMessages, client_port=5050):
 		print(f"POP IP {host}")
 		self.IP = host
 		self.client_port = client_port
 		self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		self.stream_queueMessages = Queue()
+		self.stream_queueMessages = stream_queueMessages
 		self.startClientSocket()
 	
 	def startClientSocket(self):
@@ -15,18 +15,18 @@ class oPop:
 		print("Starting client socket")
 		try:
 			# Bind to the specified IP and port
-			self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-			self.client_socket.bind(('0.0.0.0', self.client_port))
+			self.client_socket.bind((self.IP, self.client_port))
 			self.client_thread = threading.Thread(target=self.listenClient).start()
 		except Exception as e:
 			print(f"Error binding client socket: {e}")
 			raise
 	
-	def parseClient(self, packet): 
+	def parseClient(self, packet, clientIP): 
 		try:
 			data = json.loads(packet)
 			
 			if data["type"] == "request":
+				data["path"] = [clientIP, self.IP]
 				print(f"STREAM DATA: {data}")
 				self.stream_queueMessages.put(data)
 
@@ -44,7 +44,7 @@ class oPop:
 				print(f"[THREAD {self.client_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}")
 				data = packet.decode('utf-8')
 				
-				self.parseClient(data)
+				self.parseClient(data, fromIP)
 
 		except Exception as e: 
 			print(f"Error (listenClient): {e}")
