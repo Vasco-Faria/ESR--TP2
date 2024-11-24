@@ -37,6 +37,7 @@ class oNode:
 		# Base case: If no downstream neighbors, stop propagation
 		if not self.downstream_neighbours:
 			print(f"[{self.IP}] No downstream neighbours. Propagation stops here.")
+			self.oPop=oPop(self.IP)
 			return {"status": "success", "node": self.IP}
 
 		# Thread-safe list to collect reports from all downstream neighbors
@@ -99,11 +100,17 @@ class oNode:
 		try:
 			data = json.loads(packet)
 			overlay_conn = json.loads(data["data"]["overlay_conn"])
+			print(data)
+			print(data["type"])
 
 			if data["type"] == "overlay_setup":
-				neighbours = overlay_conn.pop(self.IP)
-				self.downstream_neighbours.update(neighbours)
+				if self.IP in overlay_conn:
+					neighbours = overlay_conn.pop(self.IP)
+					self.downstream_neighbours.update(neighbours)
+				print("\n YES!")
+				print(data["from"])
 				self.upstream_neighbours.add(data["from"])
+				print(f"Upstream neighbours: {self.upstream_neighbours}")
 				print(f"\nDownstream neighbours: {self.downstream_neighbours} Stream_port: {self.stream_port}")
 
 				return overlay_conn
@@ -139,7 +146,7 @@ class oNode:
 
 			while True:
 				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
-					packet = self.oPop.stream_queueMessages.get() if self.oPop is not None else self.stream_queueMessages.get()	
+					packet = self.oPop.stream_queueMessages.get() if self.oPop is not None else self.stream_queueMessages.get()
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {len(packet)}\nTo:{toIP}:{self.stream_port}]")
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")

@@ -15,7 +15,8 @@ class oPop:
 		print("Starting client socket")
 		try:
 			# Bind to the specified IP and port
-			self.client_socket.bind((self.IP, self.client_port))
+			self.client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+			self.client_socket.bind(('0.0.0.0', self.client_port))
 			self.client_thread = threading.Thread(target=self.listenClient).start()
 		except Exception as e:
 			print(f"Error binding client socket: {e}")
@@ -26,7 +27,6 @@ class oPop:
 			data = json.loads(packet)
 			
 			if data["type"] == "request":
-				data["path"].append(self.IP)
 				print(f"STREAM DATA: {data}")
 				self.stream_queueMessages.put(data)
 

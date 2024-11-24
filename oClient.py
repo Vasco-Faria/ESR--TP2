@@ -152,6 +152,8 @@ class oClient:
             packet = json.dumps({"type": "request", "data": request_message})
             self.socket.sendto(packet.encode("utf-8"), (self.current_pop, self.pop_port))
             print(f"Enviada solicitação {request_type}: {packet}")
+            print(self.pop_port)
+            print(self.current_pop)
 
             # Receber resposta
             try:
