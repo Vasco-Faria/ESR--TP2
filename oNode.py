@@ -22,7 +22,10 @@ class oNode:
 
 		self.stream_socket.bind((self.IP, self.stream_port))
 		self.stream_thread = threading.Thread(target=self.listenStream).start() #run a thread to communicate other nodes about stream
-
+	
+	def checkPopCondition(self): 
+		if self.oPop is None and len(self.downstream_neighbours) == 0: 
+			self.oPop = oPop(self.IP, self.stream_queueMessages)
 
 	def getNeighbourFromIdx(self, set, index):
 		temp = list(set)
@@ -101,10 +104,13 @@ class oNode:
 			overlay_conn = json.loads(data["data"]["overlay_conn"])
 
 			if data["type"] == "overlay_setup":
-				neighbours = overlay_conn.pop(self.IP)
-				self.downstream_neighbours.update(neighbours)
+				neighbours = overlay_conn.pop(self.IP, None)
+				
+				if neighbours is not None:
+					self.downstream_neighbours.update(neighbours)
+					
 				self.upstream_neighbours.add(data["from"])
-				print(f"\nDownstream neighbours: {self.downstream_neighbours} Stream_port: {self.stream_port}")
+				print(f"\nDownstream neighbours: {self.downstream_neighbours} Upstream neighbours: {self.upstream_neighbours}")
 
 				return overlay_conn
 		
@@ -126,6 +132,7 @@ class oNode:
 
 					overlay_conn = self.parseManagement(data)
 					report_packet = self.propagateOverlay(overlay_conn)
+					self.checkPopCondition()
 
 					conn.sendall(json.dumps(report_packet).encode("utf-8"))
 					conn.close()		
@@ -139,7 +146,8 @@ class oNode:
 
 			while True:
 				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
-					packet = self.oPop.stream_queueMessages.get() if self.oPop is not None else self.stream_queueMessages.get()	
+					packet = self.stream_queueMessages.get()
+					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {len(packet)}\nTo:{toIP}:{self.stream_port}]")
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
