@@ -1,3 +1,4 @@
+
 import socket, json, threading, sys
 from queue import Queue
 from oPop import oPop
@@ -190,6 +191,4 @@ class oNode:
 			print(f"Error (listenStream): {e}")
 
 if __name__ == "__main__":
-
-	#Init oNode
 	node = oNode()
