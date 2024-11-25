@@ -42,7 +42,7 @@ class VideoStream:
 		print('-'*60)
 		print(f"Video ended. Restarting video. Frame number: {self.frameNum}")
 		print('-'*60)
-		#self.frameNum = 0
+		self.frameNum = 0
 		self.cap = cv2.VideoCapture(self.filename)
 		
 		# Read the first frame after reset

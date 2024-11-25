@@ -3,8 +3,11 @@ import socket, json, threading, sys
 from queue import Queue
 from oPop import oPop
 from NetworkFunctions import getSelfIP
+BUFFER_SIZE = 65536
+MAX_QUEUE_SIZE = 100 
 
 class oNode: 
+
 	def __init__(self, manage_port=6010, stream_port=25000):
 		self.IP = getSelfIP()
 		self.manage_port = manage_port
@@ -14,6 +17,9 @@ class oNode:
 		self.management_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
+
+		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
+		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, BUFFER_SIZE)
 		self.oPop = None
 		self.run()
 
@@ -146,6 +152,7 @@ class oNode:
 			print(f"[THREAD {self.stream_socket.getsockname()}]Node listening")
 
 			while True:
+
 				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
 					packet = self.stream_queueMessages.get()
 					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")

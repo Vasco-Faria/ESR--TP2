@@ -25,7 +25,11 @@ class oClient:
         
         self.get_pops_list()
 
+
         
+    def run(self):
+        listen_thread = threading.Thread(target=self.listen_for_responses)
+        listen_thread.start()
 
 
     def get_pops_list(self):
@@ -152,46 +156,41 @@ class oClient:
             packet = json.dumps({"type": "request", "data": request_message})
             self.socket.sendto(packet.encode("utf-8"), (self.current_pop, self.pop_port))
             print(f"Enviada solicitação {request_type}: {packet}")
-            print(self.pop_port)
-            print(self.current_pop)
-
-            # Receber resposta
-            try:
-                response, _ = self.socket.recvfrom(4096)
-                response_data = json.loads(response.decode())
-                
-                # Processar a resposta detalhada
-                status = response_data.get("status")
-                code = response_data.get("code")
-                message = response_data.get("message", "")
-                data = response_data.get("data", {})
-
-                if status == "success":
-                    print(f"Sucesso ({code}): {message}")
-                    return data
-                elif status == "error":
-                    print(f"Erro ({code}): {message}")
-                    return None
-                else:
-                    print(f"Resposta inesperada ({code}): {message}")
-                    return None
-
-            except socket.timeout:
-                print(f"Timeout: Não foi possível receber resposta para {request_type}")
-                return None
-            except json.JSONDecodeError:
-                print("Erro: A resposta recebida não está no formato JSON esperado.")
-                return None
         else:
             print("Tipo de solicitação UDP inválido.")
             return None
 
 
+    def listen_for_responses(self):
+        '''Escutar por respostas do PoP e processá-las.'''
+        print("Começar a escutar...")
 
-if __name__ == '__main__':
-    client = oClient() 
-    client.monitor_connection()
+        while True:
+            try:
+                response, _ = self.socket.recvfrom(4096)
+                print(f"Pacote recebido: {response}")  # Verifica o pacote recebido
+                response_data = json.loads(response.decode("utf-8"))
+                print(f"Resposta recebida do PoP: {response_data}")
 
-    monitor_thread = threading.Thread(target=client.monitor_connection)
-    monitor_thread.daemon = True
-    monitor_thread.start()
+                # Verificar se a resposta é um dicionário ou lista
+                if isinstance(response_data, dict):
+                    # Processar resposta como um dicionário
+                    if response_data.get("status") == "success":
+                        print(f"Sucesso: {response_data.get('message')}")
+                    else:
+                        print(f"Erro: {response_data.get('message')}")
+                elif isinstance(response_data, list):
+                    # Processar resposta como uma lista
+                    print(f"Resposta recebida como lista: {response_data}")
+                    # Aqui você pode decidir como processar a lista
+                else:
+                    print(f"Resposta com formato desconhecido: {response_data}")
+            except socket.timeout:
+                # Não há resposta dentro do tempo limite
+                continue
+            except json.JSONDecodeError:
+                print("Resposta inválida recebida do PoP.")
+            except Exception as e:
+                print(f"Erro ao processar resposta: {e}")
+
+
