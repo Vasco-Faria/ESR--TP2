@@ -15,6 +15,7 @@ class oPop:
 		print("Starting client socket")
 		try:
 			# Bind to the specified IP and port
+			print(self.client_port)
 			self.client_socket.bind((self.IP, self.client_port))
 			self.client_thread = threading.Thread(target=self.listenClient).start()
 		except Exception as e:
@@ -28,11 +29,26 @@ class oPop:
 			if data["type"] == "request":
 				data["path"] = [clientIP, self.IP]
 				print(f"STREAM DATA: {data}")
+
 				self.stream_queueMessages.put(data)
 
 		except json.JSONDecodeError:
+			error_response = json.dumps({
+				"status": "error", 
+				"code": 400, 
+				"message": "Invalid JSON format",
+				"data": {}
+			})
+			self.client_socket.sendto(error_response.encode('utf-8'), (clientIP, self.client_port))
 			print("Received invalid JSON data.")
 		except Exception as e:
+			error_response = json.dumps({
+				"status": "error", 
+				"code": 500, 
+				"message": f"Server error: {str(e)}",
+				"data": {}
+			})
+			self.client_socket.sendto(error_response.encode('utf-8'), (clientIP, self.client_port))
 			print(f"Error handling data: {e}")
 
 	def listenClient(self): 
