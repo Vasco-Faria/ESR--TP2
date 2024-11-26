@@ -8,6 +8,8 @@ from PIL import Image, ImageTk
 from tkinter import Toplevel, OptionMenu, StringVar, Button, Label, messagebox
 from oClient import oClient
 import time
+import cv2
+import numpy as np
 import socket, threading, sys, traceback, os, json, subprocess, base64
 
 
@@ -42,8 +44,9 @@ class Client:
         self.sessionId = 0
         self.teardownAcked = 0
         self.frameNbr = 0
-
+        self.openRtpPort() 
         self.videoList = self.oclient.get_video_list() 
+        self.oclient.run()
 
         
     def createWidgets(self):
@@ -115,13 +118,34 @@ class Client:
         """Setup button handler."""
         if self.state == self.READY or self.state == self.INIT:
             self.sessionId = int(time.time())
+            self.atualizar_config_json("filename", self.fileName)
             response = self.oclient.send_udp_request("SETUP", file_name=self.fileName)
-            print("Setup response:", response)
+            self.state=self.READY
+            self.playMovie()
             
-            if response:
-                self.state = self.READY
-                self.openRtpPort() 
-    
+    def atualizar_config_json(self, key, value):
+        """
+        Atualiza o arquivo config.json com a chave e o valor especificados.
+        """
+        config_file = "config.json"
+        try:
+            # Ler o arquivo config.json
+            with open(config_file, "r") as f:
+                config = json.load(f)
+            
+            # Atualizar a chave com o novo valor
+            config[key] = value
+            
+            # Escrever de volta no arquivo
+            with open(config_file, "w") as f:
+                json.dump(config, f, indent=4)
+            
+            print(f"Configuração '{key}' atualizada para '{value}'.")
+        except FileNotFoundError:
+            print(f"Arquivo {config_file} não encontrado.")
+        except Exception as e:
+            print(f"Erro ao atualizar o config.json: {e}")
+
     def exitClient(self):
         """Teardown button handler."""
         response = self.oclient.send_udp_request("TEARDOWN", session_id=self.sessionId)
@@ -133,7 +157,8 @@ class Client:
         """Pause button handler."""
         if self.state == self.PLAYING:
             self.oclient.send_udp_request("PAUSE", session_id=self.sessionId)
-            self.State=READY
+            self.playEvent.set()
+            self.state=self.READY
 
     def switchVideo(self):
         """Open a window to select a new video from the server's list."""
@@ -213,47 +238,105 @@ class Client:
     def playMovie(self):
         """Play button handler."""
         if self.state == self.READY:
-            print("Pressed play")
             # Create a new thread to listen for RTP packets
-            threading.Thread(target=self.listenRtp).start()
+            threading.Thread(target=self.listen_rtp).start()
             self.playEvent = threading.Event()
             self.playEvent.clear()
             self.oclient.send_udp_request("PLAY", session_id=self.sessionId)
             self.videoN=1
             self.frameNbr=0
-            self.state=PLAYING
-    
-    def listenRtp(self):		
-        """Listen for RTP packets."""
+            self.state=self.PLAYING
+
+    def listen_rtp(self):
+        """Listen for RTP packets and process video chunks."""
+        print("Listening for RTP packets")
         while True:
             try:
-                packet = self.rtpSocket.recv(20480)
-                temp = json.loads(packet.decode("utf-8"))
-                data = base64.b64decode(temp["data"])
-                print(f"DATA")
+                # Recebe os dados do socket RTP
+                # Ajustar o tamanho do buffer para 1MB, por exemplo
+                self.rtpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024*1024*10)
 
+                data, addr = self.rtpSocket.recvfrom(20480)
                 if data:
-                    rtpPacket = RtpPacket()
-                    rtpPacket.decode(data)
+                    # Decodifica o pacote JSON
+                    json_packet = json.loads(data.decode("utf-8"))
                     
-                    currFrameNbr = rtpPacket.seqNum()
-                    print("Current Seq Num: " + str(currFrameNbr))
-                                        
-                    if currFrameNbr > self.frameNbr: # Discard the late packet
-                        self.frameNbr = currFrameNbr
-                        self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
-            except:
-                # Stop listening upon requesting PAUSE or TEARDOWN
-                if self.playEvent.isSet(): 
+                    # Extrai o campo 'data' e decodifica o base64
+                    encoded_data = json_packet.get("data")
+                    if not encoded_data:
+                        raise ValueError("No 'data' field in received packet")
+
+                    # Decodifica o base64 para recuperar o pacote RTP
+                    rtp_data = base64.b64decode(encoded_data)
+
+                    # Decodifica o pacote RTP
+                    rtp_packet = RtpPacket()
+                    rtp_packet.decode(rtp_data)
+
+                    # Obtém o número do frame do pacote atual
+                    curr_frame_nbr = rtp_packet.seqNum()
+                    print(f"Current Seq Num: {curr_frame_nbr}")
+
+                    if curr_frame_nbr > self.frameNbr:  # Descartar pacotes atrasados
+                        self.frameNbr = curr_frame_nbr
+
+                        # Extrai o payload (frame codificado) do pacote
+                        chunk = rtp_packet.getPayload()
+                        
+                        # Verifique se o payload não está vazio ou corrompido
+                        if chunk is None or len(chunk) == 0:
+                            print(f"Frame {curr_frame_nbr} está vazio ou corrompido. Ignorando...")
+                            continue
+
+                        # Decodifica e processa o frame
+                        self.process_video_chunk(chunk)
+                    else:
+                        print(f"Pacote atrasado ou duplicado: {curr_frame_nbr}. Ignorando...")
+
+
+            except Exception as e:
+                print(f"Error while receiving RTP packets: {e}")
+
+                # Para de escutar se PAUSE ou TEARDOWN forem requisitados
+                if self.playEvent.isSet():
                     break
-                
-                # Upon receiving ACK for TEARDOWN request,
-                # close the RTP socket
+
+                # Fecha o socket RTP ao receber TEARDOWN
                 if self.teardownAcked == 1:
                     self.rtpSocket.shutdown(socket.SHUT_RDWR)
                     self.rtpSocket.close()
                     break
-                    
+
+
+    def process_video_chunk(self, chunk):
+        """Decode and process the video chunk."""
+        try:
+            # Decodifica o chunk para criar o frame
+            frame = cv2.imdecode(np.frombuffer(chunk, np.uint8), cv2.IMREAD_COLOR)
+
+            # Verifica se o frame foi decodificado corretamente
+            if frame is None:
+                raise ValueError("Failed to decode frame from chunk (invalid format)")
+
+            # Atualiza a interface com o novo frame
+            self.update_movie(frame)
+        except Exception as e:
+            print(f"Error processing video chunk: {e}")
+
+    def update_movie(self, frame):
+        """Display frame in the GUI."""
+        try:
+            # Converte o frame do OpenCV para uma imagem PIL para uso no Tkinter
+            image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            photo = ImageTk.PhotoImage(image)
+
+            # Atualiza o label da interface
+            self.label.configure(image=photo, height=288)
+            self.label.image = photo
+        except Exception as e:
+            print(f"Error updating movie display: {e}")
+
+
     def writeFrame(self, data):
         """Write the received frame to a temp image file. Return the image file."""
         cachename = CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT
@@ -268,14 +351,17 @@ class Client:
         photo = ImageTk.PhotoImage(Image.open(imageFile))
         self.label.configure(image = photo, height=288) 
         self.label.image = photo
+
+    
         
     def openRtpPort(self):
         """Open RTP socket binded to a specified port."""
         self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtpSocket.settimeout(2)
         try:
-            self.rtpSocket.bind(('', self.rtpPort))
-            print('\nBind \n')
+            self.rtpSocket.bind((self.get_myIP(), self.rtpPort))
+            print(self.get_myIP())
+            print(self.rtpPort)
         except:
             tkinter.messagebox.showwarning('Unable to Bind', 'Unable to bind PORT=%d' %self.rtpPort)
 

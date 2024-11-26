@@ -3,8 +3,11 @@ import socket, json, threading, sys
 from queue import Queue
 from oPop import oPop
 from NetworkFunctions import getSelfIP
+BUFFER_SIZE = 65536
+MAX_QUEUE_SIZE = 100 
 
 class oNode: 
+
 	def __init__(self, manage_port=6010, stream_port=25000):
 		self.IP = getSelfIP()
 		self.manage_port = manage_port
@@ -14,6 +17,10 @@ class oNode:
 		self.management_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
+
+
+		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
+		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, BUFFER_SIZE)
 		self.oPop = None
 		self.run()
 
@@ -146,6 +153,7 @@ class oNode:
 			print(f"[THREAD {self.stream_socket.getsockname()}]Node listening")
 
 			while True:
+				
 				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
 					packet = self.stream_queueMessages.get()
 					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")
@@ -158,12 +166,12 @@ class oNode:
 
 				try:
 					self.stream_socket.settimeout(0.5) 
-					packet, (fromIP, fromPort) = self.stream_socket.recvfrom(10240)
+					packet, (fromIP, fromPort) = self.stream_socket.recvfrom(30000)
 					print(f"[THREAD {self.stream_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}\n")
 					
 					data = json.loads(packet.decode("utf-8"))
 					
-					if data["type"] == "request":
+					if data["type"] == "request" and data["command"=="SETUP"]:
 						data["path"].append(self.IP)
 						print(f"STREAM DATA: {data}")
 
@@ -176,11 +184,29 @@ class oNode:
 					elif data["type"] == "response": 
 						data["path"].pop()
 						print(f"STREAM DATA: {data}")
-						addr = (data["path"][-1], 25000)
-						new_packet = json.dumps({"type": data["type"],	"path": data["path"], "data": data["data"]}).encode("utf-8")
-						print(f"SENDING TO {addr}")
-						self.stream_socket.sendto(new_packet, addr)
 
+						# Verificar se oPop está configurado
+						if self.oPop is not None:
+							active_clients = {}
+							# Filtrar os clientes "ativos" do dicionário de oPop
+							for ip, client_status in self.oPop.clients_status.items():
+								# Verificar se o status do cliente é "ativo"
+								if client_status == "ativo":
+									active_clients[ip] = client_status
+
+							# Enviar a resposta apenas para os clientes "ativos"
+							for client_ip in active_clients:
+								addr = (client_ip, 25000)
+								new_packet = json.dumps({"type": data["type"], "path": data["path"], "data": data["data"]}).encode("utf-8")
+								print(f"SENDING TO {addr}")
+								self.stream_socket.sendto(new_packet, addr)
+
+						else:
+							# Lógica de envio padrão, caso oPop seja None
+							addr = (data["path"][-1], 25000)
+							new_packet = json.dumps({"type": data["type"], "path": data["path"], "data": data["data"]}).encode("utf-8")
+							print(f"SENDING TO {addr}")
+							self.stream_socket.sendto(new_packet, addr)
 				except json.JSONDecodeError as e:
 					print(f"Received invalid JSON data: {e}")
 					print(f"\nPacket: {packet}")

@@ -25,8 +25,14 @@ class oClient:
         
         self.get_pops_list()
 
-        
 
+        
+    def run(self):
+        listen_thread = threading.Thread(target=self.listen_for_responses)
+        listen_thread.start()
+
+        monitor_thread = threading.Thread(target=self.monitor_current_pop)
+        monitor_thread.start()
 
     def get_pops_list(self):
         '''Obter lista de PoPs e lista de vídeos do servidor via UDP'''
@@ -71,13 +77,6 @@ class oClient:
             return []
 
 
-    def switch_pop(self, new_pop):
-        '''Troca para o PoP especificado e atualiza config.json'''
-        print(f"Troca para o PoP {new_pop['name']} ({new_pop['ip']}) devido à disponibilidade de conteúdo.")
-        self.current_pop = new_pop
-        
-
-
     def measure_latency(self, ip):
         '''Medir a latência de um PoP dado seu IP.'''
         try:
@@ -113,22 +112,66 @@ class oClient:
 
 
     def monitor_current_pop(self):
-        '''Monitorar a conexão com o current_pop para verificar a sua disponibilidade'''
+        '''Monitorar a latência de todos os PoPs e realizar o switch se necessário.'''
         while True:
-            if self.current_pop:
-                latency = self.measure_latency(self.current_pop['ip'])
-                print(f"Latência atual para o current_pop {self.current_pop['name']} ({self.current_pop['ip']}): {latency} ms")
+            if self.pop_list:
+                best_latency = float('inf')
+                best_pop = None
 
-                if latency == float('inf'):
-                    print(f"Conexão perdida com {self.current_pop['name']}. Tentando reconectar...")
-                    self.select_initial_pop()  # Re-seleciona o PoP com a menor latência
+                # Medir latência de todos os PoPs
+                for ip in self.pop_list:
+                    latency = self.measure_latency(ip)
+                    print(f"Latência para o PoP {ip}: {latency} ms")
+
+                    if latency < best_latency:
+                        best_latency = latency
+                        best_pop = ip
+
+                # Se o PoP com melhor latência não for o atual, faz o switch
+                if best_pop != self.current_pop:
+                    print(f"Switching para o PoP {best_pop} com latência {best_latency} ms")
+                    self.switch_pop(best_pop)
 
             else:
-                print("Nenhum current_pop definido para monitorar.")
+                print("Nenhum PoP disponível para monitorar.")
 
+            # Esperar o próximo ciclo de monitoramento
             time.sleep(self.pop_check_interval)
 
+    def switch_pop(self, new_pop):
+        '''Troca para o PoP especificado e atualiza o current_pop.'''
+        self.cancelar_transmissao()
+        print(f"Troca para o PoP {new_pop} devido à melhor latência.")
+        self.current_pop = new_pop
+        file_name = self.obter_valor_config_json("filename")
+        if file_name != "nada":
+            self.send_udp_request("SETUP",file_name=filename)
 
+
+    def obter_valor_config_json(self, key):
+        """
+        Obtém o valor de uma chave do arquivo config.json.
+        """
+        config_file = "config.json"
+        try:
+            # Ler o arquivo config.json
+            with open(config_file, "r") as f:
+                config = json.load(f)
+            
+            # Retornar o valor da chave
+            return config.get(key)
+        except FileNotFoundError:
+            print(f"Arquivo {config_file} não encontrado.")
+            return None
+        except Exception as e:
+            print(f"Erro ao ler o config.json: {e}")
+            return None
+
+    def cancelar_transmissao(self):
+        """Envia uma mensagem UDP ao PoP especificado para cancelar a transmissão."""
+        mensagem = "CANCEL"
+        self.send_udp_request(mensagem) 
+        print(f"Cancelamento enviado para o PoP.")
 
 #Client functions 
 
@@ -144,54 +187,50 @@ class oClient:
             "PLAY": f"PLAY UDP/1.0\nSession: {session_id}\n",
             "PAUSE": f"PAUSE UDP/1.0\nSession: {session_id}\n",
             "TEARDOWN": f"TEARDOWN UDP/1.0\nSession: {session_id}\n",
-            "SWITCH": f"SWITCH {file_name} UDP/1.0\nSession: {session_id}\n"
+            "SWITCH": f"SWITCH {file_name} UDP/1.0\nSession: {session_id}\n",
+            "CANCEL": f"CANCEL UDP/1.0\nSession: {session_id}\n"
         }
 
         request_message = request_data.get(request_type)
         if request_message:
-            packet = json.dumps({"type": "request", "data": request_message})
+            packet = json.dumps({"type": "request","command": request_type,"data": request_message})
             self.socket.sendto(packet.encode("utf-8"), (self.current_pop, self.pop_port))
             print(f"Enviada solicitação {request_type}: {packet}")
-            print(self.pop_port)
-            print(self.current_pop)
-
-            # Receber resposta
-            try:
-                response, _ = self.socket.recvfrom(4096)
-                response_data = json.loads(response.decode())
-                
-                # Processar a resposta detalhada
-                status = response_data.get("status")
-                code = response_data.get("code")
-                message = response_data.get("message", "")
-                data = response_data.get("data", {})
-
-                if status == "success":
-                    print(f"Sucesso ({code}): {message}")
-                    return data
-                elif status == "error":
-                    print(f"Erro ({code}): {message}")
-                    return None
-                else:
-                    print(f"Resposta inesperada ({code}): {message}")
-                    return None
-
-            except socket.timeout:
-                print(f"Timeout: Não foi possível receber resposta para {request_type}")
-                return None
-            except json.JSONDecodeError:
-                print("Erro: A resposta recebida não está no formato JSON esperado.")
-                return None
         else:
             print("Tipo de solicitação UDP inválido.")
             return None
 
 
+    def listen_for_responses(self):
+        '''Escutar por respostas do PoP e processá-las.'''
+        print("Começar a escutar...")
 
-if __name__ == '__main__':
-    client = oClient() 
-    client.monitor_connection()
+        while True:
+            try:
+                response, _ = self.socket.recvfrom(4096)
+                print(f"Pacote recebido: {response}")  # Verifica o pacote recebido
+                response_data = json.loads(response.decode("utf-8"))
+                print(f"Resposta recebida do PoP: {response_data}")
 
-    monitor_thread = threading.Thread(target=client.monitor_connection)
-    monitor_thread.daemon = True
-    monitor_thread.start()
+                # Verificar se a resposta é um dicionário ou lista
+                if isinstance(response_data, dict):
+                    # Processar resposta como um dicionário
+                    if response_data.get("status") == "success":
+                        print(f"Sucesso: {response_data.get('message')}")
+                    else:
+                        print(f"Erro: {response_data.get('message')}")
+                elif isinstance(response_data, list):
+                    # Processar resposta como uma lista
+                    print(f"Resposta recebida como lista: {response_data}")
+                    # Aqui você pode decidir como processar a lista
+                else:
+                    print(f"Resposta com formato desconhecido: {response_data}")
+            except socket.timeout:
+                # Não há resposta dentro do tempo limite
+                continue
+            except json.JSONDecodeError:
+                print("Resposta inválida recebida do PoP.")
+            except Exception as e:
+                print(f"Erro ao processar resposta: {e}")
+
+

@@ -24,7 +24,7 @@ class ServerWorker:
 	FILE_NOT_FOUND_404 = 1
 	CON_ERR_500 = 2
 
-	PACKET_SIZE = 14000
+	PACKET_SIZE = 30000
 	pop_list=[{}]
 
 	video_folder = "Videos" 
@@ -106,7 +106,7 @@ class ServerWorker:
 						self.videoStream = VideoStream(video_path)
 					#self.processRtspRequest(data)
 					time.sleep(5)
-					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start()
+					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start() 
 			except socket.timeout:
 				continue
 			
@@ -125,29 +125,47 @@ class ServerWorker:
 			#print(self.clientInfo)
 			#data = self.clientInfo['videoStream'].nextFrame()
 			data = self.videoStream.nextFrame()
+
+			if data is None:
+				print("Fim do vídeo. Parando a transmissão.")
+				break  # Sai do loop quando o vídeo terminar
 			if data is not None and len(data) > 0: 
 				#frameNumber = self.clientInfo['videoStream'].frameNbr()
 				frameNumber = self.videoStream.frameNbr()
 				try:
 					#address = self.clientInfo['rtspSocket'][1][0]
 					#port = int(self.clientInfo['rtpPort'])
-					print("Size of data: ", len(data))
 					
+
+					print("A mandar ", frameNumber)
 					for i in range(0, len(data), self.PACKET_SIZE):
 						chunk = data[i:i+self.PACKET_SIZE]
-						print("Size of chunk: ", len(chunk))
+						chunk_size=len(chunk)
+						print(f"Sending chunk of size: {chunk_size} bytes")
+
 						encoded_chunk = base64.b64encode(self.makeRtp(chunk, frameNumber)).decode("utf-8")
 						packet = {"type": "response",
 									"path": path,
 									"data": encoded_chunk}
-						packet = json.dumps(packet).encode("utf-8")
-						#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
-						addr = (path[-1], 25000)
-						#print(f"SENDING TO {addr}")
-						self.rtpSocket.sendto(packet, addr)
-						#time.sleep(2)
+						
+						try:
+							packet = json.dumps(packet).encode("utf-8")
+							packet_size = len(packet)
+							print(f"JSON packet size: {packet_size} bytes")
+							if packet_size > 65507:  # Max UDP packet size for IPv4
+								print(f"Warning: Packet size exceeds UDP limit! ({packet_size} bytes)")
+							#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
+							addr = (path[-1], 25000)
+							#print(f"SENDING TO {addr}")
+							self.rtpSocket.sendto(packet, addr)
+
+						except json.JSONDecodeError as e:
+							print(f"Error encoding JSON: {e}. Invalid packet: {packet}")
+						except Exception as e:
+							print(f"Error sending packet: {e}")
+						#time.sleep(1)
 					
-					#time.sleep(delay)
+					time.sleep(delay)
 				except:
 					print("Connection Error")
 					print('-'*60)
