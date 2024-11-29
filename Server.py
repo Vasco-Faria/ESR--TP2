@@ -26,7 +26,7 @@ class Server:
 		print("Server On! Port: " + str(SERVER_PORT))
 		rtspSocket.listen(5)  
 		
-		ServerWorker(pop_list).run()
+		ServerWorker(pop_list, overlay_builder.downstream_neighbours ).run()
 
 if __name__ == "__main__":
 	(Server()).main()

@@ -19,6 +19,7 @@ class oNode:
 		self.management_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.stream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.stream_queueMessages = Queue()
+		self.activeStreams = {}
 
 		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
 		self.stream_socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, BUFFER_SIZE)
@@ -173,14 +174,21 @@ class oNode:
 					data = json.loads(packet.decode("utf-8"))
 					
 					if data["type"] == "request" and data["command"=="SETUP"]:
-						data["path"].append(self.IP)
+						#data["path"].append(self.IP)
+						filename = data["data"].split(' ')[1]
 						print(f"STREAM DATA: {data}")
 
-						if self.oPop is None:
-							self.stream_queueMessages.put(data)
-						else:
-							self.stream_queueMessages.put(data)	
+						if filename in self.activeStreams.keys(): 
+							self.activeStreams[filename]['active_nodes'].add(fromIP) 
 						
+						else:
+							#Add entry
+							self.activeStreams[filename] = {
+								'active_nodes': set(fromIP),
+								'worker': #have a thread running for this specific video
+							}
+
+						self.stream_queueMessages.put(data)
 
 					elif data["type"] == "response": 
 						data["path"].pop()

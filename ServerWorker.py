@@ -31,7 +31,7 @@ class ServerWorker:
 
 
 
-	def __init__(self,pop_list):
+	def __init__(self,pop_list, downstream_neighbours):
 		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		self.rtpSocket.bind(('', 25000))
 
@@ -39,7 +39,8 @@ class ServerWorker:
 		self.udpSocket.bind(('', 8000))  
 
 		self.pop_list=pop_list
-		
+		self.downstream_neighbours = downstream_neighbours
+		self.activeStreams = {}
 
 		
 	def run(self):
@@ -98,25 +99,35 @@ class ServerWorker:
 				data = json.loads(packet.decode("utf-8"))
 				if data["data"]:
 					print(f"Data received:\n {data}")
-					print(data["data"].split(' '))
 					filename = data["data"].split(' ')[1]
-					video_path = os.path.join(self.video_folder, filename)
-					if os.path.isfile(video_path):
-						# Initialize new video stream
-						self.videoStream = VideoStream(video_path)
+					direct_clients = [x for x in data["path"] if x in self.downstream_neighbours]
+
+					if filename in self.activeStreams.keys():
+						self.activeStreams[filename]['active_nodes'].update(direct_clients)
+					
+					else: 
+						video_path = os.path.join(self.video_folder, filename)
+						if os.path.isfile(video_path):
+							# Initialize new video stream
+							self.activeStreams[filename] = {
+								'active_nodes': set().update(direct_clients),
+								'video_stream': VideoStream(video_path),
+								'worker': threading.Thread(target=self.sendRtp, args=(filename)).start()
+							}
 					#self.processRtspRequest(data)
 					time.sleep(5)
 					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start() 
 			except socket.timeout:
 				continue
-			
-	def sendRtp(self, path):
+
+	def sendRtp(self, filename):
 		"""Send RTP packets over UDP."""
+		activeStream = self.activeStreams[filename]
 		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
-		fps = self.videoStream.cap.get(cv2.CAP_PROP_FPS)
+		fps = activeStream['video_stream'].cap.get(cv2.CAP_PROP_FPS)
 		delay = 1 / fps # Delay between sending each frame based on video frame rate
 
-		while True:
+		while len(activeStream['active_nodes']) > 0:
 			#self.clientInfo['event'].wait(0.05) 
 			
 			# Stop sending if request is PAUSE or TEARDOWN
@@ -124,14 +135,14 @@ class ServerWorker:
 			#	break 
 			#print(self.clientInfo)
 			#data = self.clientInfo['videoStream'].nextFrame()
-			data = self.videoStream.nextFrame()
+			data = activeStream['video_stream'].nextFrame()
 
 			if data is None:
 				print("Fim do vídeo. Parando a transmissão.")
 				break  # Sai do loop quando o vídeo terminar
 			if data is not None and len(data) > 0: 
 				#frameNumber = self.clientInfo['videoStream'].frameNbr()
-				frameNumber = self.videoStream.frameNbr()
+				frameNumber = activeStream['video_stream'].frameNbr()
 				try:
 					#address = self.clientInfo['rtspSocket'][1][0]
 					#port = int(self.clientInfo['rtpPort'])
@@ -145,7 +156,6 @@ class ServerWorker:
 
 						encoded_chunk = base64.b64encode(self.makeRtp(chunk, frameNumber)).decode("utf-8")
 						packet = {"type": "response",
-									"path": path,
 									"data": encoded_chunk}
 						
 						try:
@@ -155,9 +165,10 @@ class ServerWorker:
 							if packet_size > 65507:  # Max UDP packet size for IPv4
 								print(f"Warning: Packet size exceeds UDP limit! ({packet_size} bytes)")
 							#self.clientInfo['rtpSocket'].sendto(self.makeRtp(chunk, frameNumber), (address, port))
-							addr = (path[-1], 25000)
-							#print(f"SENDING TO {addr}")
-							self.rtpSocket.sendto(packet, addr)
+							for client_ip in activeStream['active_nodes']:
+								addr = (client_ip, 25000)
+								#print(f"SENDING TO {addr}")
+								self.rtpSocket.sendto(packet, addr)
 
 						except json.JSONDecodeError as e:
 							print(f"Error encoding JSON: {e}. Invalid packet: {packet}")
