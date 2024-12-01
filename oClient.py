@@ -13,6 +13,11 @@ class oClient:
         self.server_port = config['server_port']
         self.pop_check_interval = config['pop_check_interval'] #intervalo para monitorar POPs
         self.timeout = config['timeout'] #timeout udp
+        config["filename"] = "nada"
+
+        #Atualizar filname
+        with open(config_file, "w") as f:
+            json.dump(config, f, indent=4)
 
         
         # Criar o socket UDP 
@@ -127,10 +132,22 @@ class oClient:
                         best_latency = latency
                         best_pop = ip
 
-                # Se o PoP com melhor latência não for o atual, faz o switch
-                if best_pop != self.current_pop:
-                    print(f"Switching para o PoP {best_pop} com latência {best_latency} ms")
-                    #self.switch_pop(best_pop)
+                current_latency = self.measure_latency(self.current_pop) if self.current_pop else float('inf')
+                print(f"Latência atual do PoP {self.current_pop}: {current_latency} ms")
+
+                
+                if best_pop and best_latency < (current_latency - 0.2):
+                    print(f"Latência atual do PoP {self.current_pop}: {current_latency} ms")
+                
+                    if best_pop and best_latency < (current_latency - 0.3):
+                        print(f"Switching para o PoP {best_pop} com latência {best_latency} ms (melhoria de {current_latency - best_latency:.2f} ms)")
+                        self.switch_pop(best_pop)
+                    else:
+                        print(f"Nenhuma troca necessária. Melhor PoP {best_pop} tem latência {best_latency} ms, diferença de {current_latency - best_latency:.2f} ms.")
+                    print(f"Switching para o PoP {best_pop} com latência {best_latency} ms (melhoria de {current_latency - best_latency:.2f} ms)")
+                    self.switch_pop(best_pop)
+                else:
+                    print(f"Nenhuma troca necessária. Melhor PoP {best_pop} tem latência {best_latency} ms, diferença de {current_latency - best_latency:.2f} ms.")
 
             else:
                 print("Nenhum PoP disponível para monitorar.")
@@ -193,7 +210,7 @@ class oClient:
 
         request_message = request_data.get(request_type)
         if request_message:
-            packet = json.dumps({"type": "request","command": request_type,"data": request_message})
+            packet = json.dumps({"type": "request","command": request_type,"filename":file_name,"data": request_message})
             self.socket.sendto(packet.encode("utf-8"), (self.current_pop, self.pop_port))
             print(f"Enviada solicitação {request_type}: {packet}")
         else:

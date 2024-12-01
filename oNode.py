@@ -5,8 +5,7 @@ from oPop import oPop
 from NetworkFunctions import getSelfIP
 BUFFER_SIZE = 65536
 MAX_QUEUE_SIZE = 100 
-BUFFER_SIZE = 65536
-MAX_QUEUE_SIZE = 100 
+
 
 class oNode: 
 
@@ -35,7 +34,7 @@ class oNode:
 	
 	def checkPopCondition(self): 
 		if self.oPop is None and len(self.downstream_neighbours) == 0: 
-			self.oPop = oPop(self.IP, self.stream_queueMessages)
+			self.oPop = oPop(self.IP, self.stream_queueMessages,self.stream_socket)
 
 	def getNeighbourFromIdx(self, set, index):
 		temp = list(set)
@@ -131,21 +130,21 @@ class oNode:
 
 	def listenManagement(self): 
 		try:
-				self.management_socket.listen()
-				print(f"[THREAD {self.management_socket.getsockname()}]Node listening")
+			self.management_socket.listen()
+			print(f"[THREAD {self.management_socket.getsockname()}]Node listening")
 
-				while True:
-					conn, (fromIP, fromPort) = self.management_socket.accept()
-					print(f"[THREAD {self.management_socket.getsockname()}]: Accepted connection from {fromIP}:{fromPort}")
-					data = conn.recv(1024).decode('utf-8')
-					print(f"[THREAD {self.management_socket.getsockname()}]: {data}")
+			while True:
+				conn, (fromIP, fromPort) = self.management_socket.accept()
+				print(f"[THREAD {self.management_socket.getsockname()}]: Accepted connection from {fromIP}:{fromPort}")
+				data = conn.recv(1024).decode('utf-8')
+				print(f"[THREAD {self.management_socket.getsockname()}]: {data}")
 
-					overlay_conn = self.parseManagement(data)
-					report_packet = self.propagateOverlay(overlay_conn)
-					self.checkPopCondition()
+				overlay_conn = self.parseManagement(data)
+				report_packet = self.propagateOverlay(overlay_conn)
+				self.checkPopCondition()
 
-					conn.sendall(json.dumps(report_packet).encode("utf-8"))
-					conn.close()		
+				conn.sendall(json.dumps(report_packet).encode("utf-8"))
+				conn.close()		
 
 		except Exception as e: 
 			print(f"Error (listenManagement): {e}")
@@ -159,6 +158,20 @@ class oNode:
 				while (self.oPop is not None and not self.oPop.stream_queueMessages.empty()) or not self.stream_queueMessages.empty():
 					packet = self.stream_queueMessages.get()
 					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")
+					
+					if "filename" in packet and self.oPop is not None:
+						filename = packet["filename"]
+						print(f"[DEBUG] Verificando cache para o vídeo: {filename}")
+
+						if self.oPop.is_video_in_cache(filename):
+							print(f"[CACHE] Vídeo {filename} encontrado no cache. Enviando frames...")
+							self.oPop.send_frames_from_cache(filename, packet["path"])
+							continue 
+						else:
+							print(f"[CACHE] Vídeo {filename} não encontrado no cache. Encaminhando para o próximo nó.")
+					
+					
+					
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
 					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}\tSize:{len(packet)}]")
 					packet = json.dumps(packet).encode("utf-8")
@@ -197,6 +210,7 @@ class oNode:
 
 						# Verificar se oPop está configurado
 						if self.oPop is not None:
+							self.oPop.store_frame_in_cache(data["filename"],data["frame"],data["data"])
 							active_clients = {}
 							# Filtrar os clientes "ativos" do dicionário de oPop
 							for ip, client_status in self.oPop.clients_status.items():

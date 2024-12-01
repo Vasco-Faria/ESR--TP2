@@ -222,8 +222,8 @@ class Client:
             else:
                 # Envia uma solicitação SWITCH ao servidor
                 print("Mudando para o vídeo:", self.fileName)
-                self.oclient.send_udp_request("SWITCH", session_id=self.sessionId)
-                self.state=READY
+                self.setupMovie()
+                self.state=self.READY
 
             # Para a thread existente do listenRtp, se estiver rodando
             if hasattr(self, 'rtp_thread') and self.rtp_thread.is_alive():

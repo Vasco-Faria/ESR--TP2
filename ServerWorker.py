@@ -161,6 +161,7 @@ class ServerWorker:
 						packet = {
 								"type": "response",
 								"filename": filename,
+								"frame": frameNumber,
 								"data": encoded_chunk
 								}
 						
