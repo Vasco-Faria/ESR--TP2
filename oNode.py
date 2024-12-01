@@ -160,8 +160,7 @@ class oNode:
 					packet = self.stream_queueMessages.get()
 					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")
 					toIP = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
-					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {len(packet)}\nTo:{toIP}:{self.stream_port}]")
-					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}]")
+					print(f"[THREAD {self.stream_socket.getsockname()}] sending: {packet}\nTo:{toIP}:{self.stream_port}\tSize:{len(packet)}]")
 					packet = json.dumps(packet).encode("utf-8")
 
 					self.stream_socket.sendto(packet, (toIP, self.stream_port))
@@ -172,27 +171,29 @@ class oNode:
 					print(f"[THREAD {self.stream_socket.getsockname()}] Connect accepted from {fromIP}:{fromPort}\n")
 					
 					data = json.loads(packet.decode("utf-8"))
+					print(f"[THREAD {self.stream_socket.getsockname()}] Data: {data}\n")
 					
-					if data["type"] == "request" and data["command"=="SETUP"]:
+					if data["type"] == "request" and data["command"] == "SETUP":
 						#data["path"].append(self.IP)
 						filename = data["data"].split(' ')[1]
 						print(f"STREAM DATA: {data}")
 
 						if filename in self.activeStreams.keys(): 
-							self.activeStreams[filename]['active_nodes'].add(fromIP) 
+							self.activeStreams[filename]['active_nodes'].update([fromIP]) 
 						
 						else:
 							#Add entry
 							self.activeStreams[filename] = {
-								'active_nodes': set(fromIP),
-								'worker': #have a thread running for this specific video
+								'active_nodes': set([fromIP]),
 							}
 
 						self.stream_queueMessages.put(data)
 
 					elif data["type"] == "response": 
-						data["path"].pop()
 						print(f"STREAM DATA: {data}")
+						print(f"Active Stream: {self.activeStreams}")
+						#filename = data["data"].split(' ')[1]
+						filename = data["filename"]
 
 						# Verificar se oPop está configurado
 						if self.oPop is not None:
@@ -206,16 +207,15 @@ class oNode:
 							# Enviar a resposta apenas para os clientes "ativos"
 							for client_ip in active_clients:
 								addr = (client_ip, 25000)
-								new_packet = json.dumps({"type": data["type"], "path": data["path"], "data": data["data"]}).encode("utf-8")
 								print(f"SENDING TO {addr}")
-								self.stream_socket.sendto(new_packet, addr)
+								self.stream_socket.sendto(packet, addr)
 
 						else:
 							# Lógica de envio padrão, caso oPop seja None
-							addr = (data["path"][-1], 25000)
-							new_packet = json.dumps({"type": data["type"], "path": data["path"], "data": data["data"]}).encode("utf-8")
-							print(f"SENDING TO {addr}")
-							self.stream_socket.sendto(new_packet, addr)
+							for node in self.activeStreams[filename]['active_nodes']:
+								addr = (node, 25000)
+								print(f"SENDING TO {addr}")
+								self.stream_socket.sendto(packet, addr)
 				except json.JSONDecodeError as e:
 					print(f"Received invalid JSON data: {e}")
 					print(f"\nPacket: {packet}")

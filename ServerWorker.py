@@ -95,34 +95,37 @@ class ServerWorker:
 		while True:
 			try: 
 				self.rtpSocket.settimeout(5)            
-				packet, addr = self.rtpSocket.recvfrom(256)
+				packet, (fromIP,fromPort) = self.rtpSocket.recvfrom(256)
 				data = json.loads(packet.decode("utf-8"))
 				if data["data"]:
 					print(f"Data received:\n {data}")
 					filename = data["data"].split(' ')[1]
-					direct_clients = [x for x in data["path"] if x in self.downstream_neighbours]
+					print(f"FileName: {filename}\n")
 
 					if filename in self.activeStreams.keys():
-						self.activeStreams[filename]['active_nodes'].update(direct_clients)
+						self.activeStreams[filename]['active_nodes'].update([fromIP])
 					
 					else: 
 						video_path = os.path.join(self.video_folder, filename)
 						if os.path.isfile(video_path):
 							# Initialize new video stream
+							print(f"fromIP: {fromIP}")
 							self.activeStreams[filename] = {
-								'active_nodes': set().update(direct_clients),
+								'active_nodes': set([fromIP]),
 								'video_stream': VideoStream(video_path),
-								'worker': threading.Thread(target=self.sendRtp, args=(filename)).start()
+								'worker': threading.Thread(target=self.sendRtp, args=(filename,))
 							}
+
+							self.activeStreams[filename]['worker'].start()
 					#self.processRtspRequest(data)
 					time.sleep(5)
-					self.videoWorker = threading.Thread(target=self.sendRtp, args=(data["path"],)).start() 
 			except socket.timeout:
 				continue
 
 	def sendRtp(self, filename):
 		"""Send RTP packets over UDP."""
 		activeStream = self.activeStreams[filename]
+		print(f"Active Stream Entry:\n  {activeStream}\n")
 		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
 		fps = activeStream['video_stream'].cap.get(cv2.CAP_PROP_FPS)
 		delay = 1 / fps # Delay between sending each frame based on video frame rate
@@ -155,8 +158,11 @@ class ServerWorker:
 						print(f"Sending chunk of size: {chunk_size} bytes")
 
 						encoded_chunk = base64.b64encode(self.makeRtp(chunk, frameNumber)).decode("utf-8")
-						packet = {"type": "response",
-									"data": encoded_chunk}
+						packet = {
+								"type": "response",
+								"filename": filename,
+								"data": encoded_chunk
+								}
 						
 						try:
 							packet = json.dumps(packet).encode("utf-8")

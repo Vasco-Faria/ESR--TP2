@@ -130,7 +130,7 @@ class oClient:
                 # Se o PoP com melhor latência não for o atual, faz o switch
                 if best_pop != self.current_pop:
                     print(f"Switching para o PoP {best_pop} com latência {best_latency} ms")
-                    self.switch_pop(best_pop)
+                    #self.switch_pop(best_pop)
 
             else:
                 print("Nenhum PoP disponível para monitorar.")
@@ -145,7 +145,7 @@ class oClient:
         self.current_pop = new_pop
         file_name = self.obter_valor_config_json("filename")
         if file_name != "nada":
-            self.send_udp_request("SETUP",file_name=filename)
+            self.send_udp_request("SETUP",file_name=file_name)
 
 
     def obter_valor_config_json(self, key):
