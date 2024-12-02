@@ -159,16 +159,19 @@ class oNode:
 					packet = self.stream_queueMessages.get()
 					print(f"[THREAD {self.stream_socket.getsockname()}] Upstream Nodes: {self.upstream_neighbours}")
 					
-					if "filename" in packet and self.oPop is not None:
-						filename = packet["filename"]
-						print(f"[DEBUG] Verificando cache para o vídeo: {filename}")
+					if packet["type"] == "request" and packet["command"] == "SETUP":
+						if "filename" in packet and self.oPop is not None:
+							filename = packet["filename"]
+							print(f"[DEBUG] Verificando cache para o vídeo: {filename}")
 
-						if self.oPop.is_video_in_cache(filename):
-							print(f"[CACHE] Vídeo {filename} encontrado no cache. Enviando frames...")
-							self.oPop.send_frames_from_cache(filename, packet["path"])
-							continue 
-						else:
-							print(f"[CACHE] Vídeo {filename} não encontrado no cache. Encaminhando para o próximo nó.")
+							if self.oPop.is_video_in_cache(filename):
+								print(f"[CACHE] Vídeo {filename} encontrado no cache. Enviando frames...")
+								client_ip = packet["path"][0] 
+								start_frame = self.oPop.clients_status.get(client_ip, {}).get("paused_frame", 0)
+								self.oPop.start_sending_frames(filename, client_ip, start_frame)
+								continue 
+							else:
+								print(f"[CACHE] Vídeo {filename} não encontrado no cache. Encaminhando para o próximo nó.")
 					
 					
 					
@@ -186,7 +189,7 @@ class oNode:
 					data = json.loads(packet.decode("utf-8"))
 					print(f"[THREAD {self.stream_socket.getsockname()}] Data: {data}\n")
 					
-					if data["type"] == "request" and data["command"] == "SETUP":
+					if (data["type"]=="request" and data["command"]=="SETUP"):
 						#data["path"].append(self.IP)
 						filename = data["data"].split(' ')[1]
 						print(f"STREAM DATA: {data}")
@@ -211,12 +214,11 @@ class oNode:
 						# Verificar se oPop está configurado
 						if self.oPop is not None:
 							self.oPop.store_frame_in_cache(data["filename"],data["frame"],data["data"])
-							active_clients = {}
-							# Filtrar os clientes "ativos" do dicionário de oPop
-							for ip, client_status in self.oPop.clients_status.items():
-								# Verificar se o status do cliente é "ativo"
-								if client_status == "ativo":
-									active_clients[ip] = client_status
+							active_clients = {
+								ip: info for ip, info in self.oPop.clients_status.items()
+								if info["status"] == "ativo" and info.get("transmission_mode") != "dedicated" and info.get("filename") == data["filename"]
+							}
+
 
 							# Enviar a resposta apenas para os clientes "ativos"
 							for client_ip in active_clients:

@@ -186,13 +186,21 @@ class oClient:
 
     def cancelar_transmissao(self):
         """Envia uma mensagem UDP ao PoP especificado para cancelar a transmissão."""
-        mensagem = "CANCEL"
+        mensagem = "TEARDOWN"
         self.send_udp_request(mensagem) 
         print(f"Cancelamento enviado para o PoP.")
 
 #Client functions 
 
-    def send_udp_request(self, request_type, file_name=None, session_id=None):
+    def get_myIP(self): 
+        try: 
+            ip = subprocess.check_output("hostname -I | awk '{print $1}'", shell=True).decode().strip()
+            return ip
+        except subprocess.CalledProcessError as e: 
+            print(f"Error getting IP: {e}")
+            return None 
+
+    def send_udp_request(self, request_type, file_name=None, session_id=None,frame_number=None):
         '''Enviar uma solicitação UDP ao current_pop'''
         if not self.current_pop:
             print("Erro: current_pop não está definido.")
@@ -204,13 +212,22 @@ class oClient:
             "PLAY": f"PLAY UDP/1.0\nSession: {session_id}\n",
             "PAUSE": f"PAUSE UDP/1.0\nSession: {session_id}\n",
             "TEARDOWN": f"TEARDOWN UDP/1.0\nSession: {session_id}\n",
-            "SWITCH": f"SWITCH {file_name} UDP/1.0\nSession: {session_id}\n",
-            "CANCEL": f"CANCEL UDP/1.0\nSession: {session_id}\n"
         }
 
         request_message = request_data.get(request_type)
+
+        if request_type == "PAUSE" and frame_number is not None:
+            request_message += f"Frame: {frame_number}\n"
+
         if request_message:
-            packet = json.dumps({"type": "request","command": request_type,"filename":file_name,"data": request_message})
+            packet = json.dumps({
+                "type": "request",
+                "command": request_type,
+                "filename": file_name,
+                "data": request_message,
+                "path":[self.get_myIP()],
+                "current_frame": frame_number
+            })
             self.socket.sendto(packet.encode("utf-8"), (self.current_pop, self.pop_port))
             print(f"Enviada solicitação {request_type}: {packet}")
         else:
@@ -251,3 +268,4 @@ class oClient:
                 print(f"Erro ao processar resposta: {e}")
 
 
+       
