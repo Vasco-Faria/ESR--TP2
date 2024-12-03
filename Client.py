@@ -168,7 +168,7 @@ class Client:
         response = self.oclient.send_udp_request("TEARDOWN", session_id=self.sessionId)
         print("Teardown response:", response)
         self.master.destroy()
-        os.remove(CACHE_FILE_NAME + str(self.sessionId) + CACHE_FILE_EXT) # Delete the cache image from video
+        os._exit(0)
 
     def pauseMovie(self):
         """Pause button handler."""
@@ -421,6 +421,9 @@ class Client:
         except subprocess.CalledProcessError as e: 
             print(f"Error getting IP: {e}")
             return None 
+
+
+
 
 
 

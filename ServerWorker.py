@@ -97,28 +97,46 @@ class ServerWorker:
 				self.rtpSocket.settimeout(5)            
 				packet, (fromIP,fromPort) = self.rtpSocket.recvfrom(256)
 				data = json.loads(packet.decode("utf-8"))
-				if data["data"]:
-					print(f"Data received:\n {data}")
-					filename = data["data"].split(' ')[1]
-					print(f"FileName: {filename}\n")
+				if data:
+					if "command" in data:
+						if data["command"]=="SETUP":
+							print(f"Data received:\n {data}")
+							filename = data["data"].split(' ')[1]
+							print(f"FileName: {filename}\n")
 
-					if filename in self.activeStreams.keys():
-						self.activeStreams[filename]['active_nodes'].update([fromIP])
-					
-					else: 
-						video_path = os.path.join(self.video_folder, filename)
-						if os.path.isfile(video_path):
-							# Initialize new video stream
-							print(f"fromIP: {fromIP}")
-							self.activeStreams[filename] = {
-								'active_nodes': set([fromIP]),
-								'video_stream': VideoStream(video_path),
-								'worker': threading.Thread(target=self.sendRtp, args=(filename,))
-							}
+							if filename in self.activeStreams.keys():
+								self.activeStreams[filename]['active_nodes'].update([fromIP])
+							
+							else: 
+								video_path = os.path.join(self.video_folder, filename)
+								if os.path.isfile(video_path):
+									# Initialize new video stream
+									print(f"fromIP: {fromIP}")
+									self.activeStreams[filename] = {
+										'active_nodes': set([fromIP]),
+										'video_stream': VideoStream(video_path),
+										'worker': threading.Thread(target=self.sendRtp, args=(filename,))
+									}
 
-							self.activeStreams[filename]['worker'].start()
-					#self.processRtspRequest(data)
-					time.sleep(5)
+									self.activeStreams[filename]['worker'].start()
+						elif data["command"]=="END":
+							print(f"Data received:\n {data}")
+							print(f"[END] Recebido comando 'END' para {filename} de {fromIP}.")
+
+							if filename in self.activeStreams.keys():
+								self.activeStreams[filename]['active_nodes'].discard(fromIP)
+								print(f"[END] Nó {fromIP} removido de active_nodes para {filename}: {self.activeStreams[filename]['active_nodes']}")
+
+								# Se não houver mais active_nodes, encerrar o fluxo
+								if not self.activeStreams[filename]['active_nodes']:
+									print(f"[END] Nenhum active_node restante para {filename}. Encerrando fluxo.")
+									if 'worker' in self.activeStreams[filename] and self.activeStreams[filename]['worker'].is_alive():
+										self.activeStreams[filename]['worker'].join(timeout=1)
+									del self.activeStreams[filename]
+									print(f"[END] Fluxo {filename} removido de activeStreams.")
+
+				#self.processRtspRequest(data)
+				time.sleep(5)
 			except socket.timeout:
 				continue
 
@@ -126,6 +144,8 @@ class ServerWorker:
 		"""Send RTP packets over UDP."""
 		activeStream = self.activeStreams[filename]
 		print(f"Active Stream Entry:\n  {activeStream}\n")
+
+
 		#fps = self.clientInfo['videoStream'].cap.get(cv2.CAP_PROP_FPS)
 		fps = activeStream['video_stream'].cap.get(cv2.CAP_PROP_FPS)
 		delay = 1 / fps # Delay between sending each frame based on video frame rate
@@ -142,7 +162,19 @@ class ServerWorker:
 
 			if data is None:
 				print("Fim do vídeo. Parando a transmissão.")
+				time.sleep(2)
+				end_of_video_packet = {
+					"type": "response",
+					"command": "END",
+					"filename": filename,
+            	}
+				packet2 = json.dumps(end_of_video_packet).encode("utf-8")
+				for client_ip in activeStream['active_nodes']:
+					addr = (client_ip, 25000)
+					self.rtpSocket.sendto(packet2, addr)
+				print(packet2)
 				break  # Sai do loop quando o vídeo terminar
+
 			if data is not None and len(data) > 0: 
 				#frameNumber = self.clientInfo['videoStream'].frameNbr()
 				frameNumber = activeStream['video_stream'].frameNbr()

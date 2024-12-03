@@ -189,21 +189,52 @@ class oNode:
 					data = json.loads(packet.decode("utf-8"))
 					print(f"[THREAD {self.stream_socket.getsockname()}] Data: {data}\n")
 					
-					if (data["type"]=="request" and data["command"]=="SETUP"):
-						#data["path"].append(self.IP)
-						filename = data["data"].split(' ')[1]
-						print(f"STREAM DATA: {data}")
+					if data["type"]=="request":
+						if data["command"]=="SETUP":
+							#data["path"].append(self.IP)
+							filename = data["data"].split(' ')[1]
+							print(f"STREAM DATA: {data}")
 
-						if filename in self.activeStreams.keys(): 
-							self.activeStreams[filename]['active_nodes'].update([fromIP]) 
-						
-						else:
-							#Add entry
-							self.activeStreams[filename] = {
-								'active_nodes': set([fromIP]),
-							}
+							if filename in self.activeStreams.keys(): 
+								self.activeStreams[filename]['active_nodes'].update([fromIP]) 
+							
+							else:
+								#Add entry
+								self.activeStreams[filename] = {
+									'active_nodes': set([fromIP]),
+								}
 
-						self.stream_queueMessages.put(data)
+							self.stream_queueMessages.put(data)
+					
+						elif ("command" in data and data["command"] == "END"):
+							filename = data.get("filename", None)
+							fromIP = data.get("from", None) 
+							print(f"[END] Recebido comando 'END' para {filename} do nó {fromIP}.")
+
+							
+							if filename in self.activeStreams:
+								self.activeStreams[filename]['active_nodes'].discard(fromIP)
+								print(f"[END] Nó {fromIP} removido dos active_nodes do fluxo {filename}.")
+
+								# Se não houver mais active_nodes, propagar END para o próximo upstream
+								if not self.activeStreams[filename]['active_nodes']:
+									print(f"[END] Nenhum active_node restante para {filename}. Propagando END para o próximo upstream.")
+									
+									# Criar e enviar pacote END para o upstream
+									end_packet = {
+										"type": "request",
+										"command": "END",
+										"filename": filename,
+										"from": self.IP
+									}
+									if self.upstream_neighbours:
+										upstream_node = self.getNeighbourFromIdx(self.upstream_neighbours, 0)
+										addr = (upstream_node, self.stream_port)
+										self.stream_socket.sendto(json.dumps(end_packet).encode('utf-8'), addr)
+										print(f"[END] Comando 'END' propagado para o nó upstream {upstream_node}.")
+							else:
+								print(f"[END] Fluxo {filename} não encontrado no activeStreams.")	
+								
 
 					elif data["type"] == "response": 
 						print(f"STREAM DATA: {data}")
@@ -213,11 +244,27 @@ class oNode:
 
 						# Verificar se oPop está configurado
 						if self.oPop is not None:
-							self.oPop.store_frame_in_cache(data["filename"],data["frame"],data["data"])
-							active_clients = {
-								ip: info for ip, info in self.oPop.clients_status.items()
-								if info["status"] == "ativo" and info.get("transmission_mode") != "dedicated" and info.get("filename") == data["filename"]
-							}
+							if ("command" in data and data["command"] == "END"):
+								print(f"[END] Recebido comando 'END' para {filename}. Preparando pacote de request.")
+
+								# Criar um novo pacote de request para "END"
+								end_request_packet = {
+									"type": "request",
+									"command": "END",
+									"filename": filename,
+									"from": self.IP
+								}
+
+								
+								# Adicionar o pacote à fila de mensagens
+								self.stream_queueMessages.put(end_request_packet)
+								continue
+							else:
+								self.oPop.store_frame_in_cache(data["filename"],data["frame"],data["data"])
+								active_clients = {
+									ip: info for ip, info in self.oPop.clients_status.items()
+									if info["status"] == "ativo" and info.get("transmission_mode") != "dedicated" and info.get("filename") == data["filename"]
+								}
 
 
 							# Enviar a resposta apenas para os clientes "ativos"
@@ -227,6 +274,7 @@ class oNode:
 								self.stream_socket.sendto(packet, addr)
 
 						else:
+
 							# Lógica de envio padrão, caso oPop seja None
 							for node in self.activeStreams[filename]['active_nodes']:
 								addr = (node, 25000)

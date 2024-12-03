@@ -93,59 +93,6 @@ class oPop:
 			print(f"[ERROR] Erro ao enviar frames para {client_ip}: {e}")
 
 
-
-	def resume_client_transmission_thread(self, filename, client_ip, start_frame):
-		"""Thread para enviar frames a partir de um frame específico para um cliente."""
-		try:
-			if filename not in self.cache:
-				print(f"[CACHE] Vídeo {filename} não encontrado no cache para {client_ip}.")
-				setup_message = json.dumps({
-					"type": "request",
-					"command":"SETUP",
-					"filename": filename,
-					"data":f"SETUP {filename} UDP/1.0\n"
-				})
-				self.stream_queueMessages.put(setup_message)
-				time.sleep(5)
-
-			frames = self.cache[filename]
-			delay = 1 / 30  # Simular 30 FPS
-			for frame_number in sorted(frames.keys()):
-				if frame_number < start_frame:
-					continue
-
-				
-				if self.clients_status[client_ip]["status"] == "pausado":
-					print(f"[CACHE] Transmissão pausada para {client_ip} no frame {frame_number}.")
-					break  
-
-				frame_data = frames[frame_number]
-				packet = {
-					"type": "frame",
-					"filename": filename,
-					"frame_number": frame_number,
-					"data": frame_data,
-				}
-
-				addr = (client_ip, 25000)
-				self.stream_socket.sendto(
-					json.dumps(packet).encode("utf-8"),
-					addr
-				)
-				print(f"[CACHE] Frame {frame_number} do vídeo {filename} enviado para {client_ip}.")
-
-				time.sleep(delay)  # Simular FPS ajustado
-
-			print(f"[CACHE] Transmissão finalizada para {client_ip}.")
-			self.clients_status[client_ip] = {
-				"status": "finalizado",
-				"transmission_mode": None  # Cliente finalizou a transmissão dedicada
-			}
-
-		except Exception as e:
-			print(f"[ERROR] Erro ao enviar frames para {client_ip}: {e}")
-
-
 	# ====================================================
 
 	def startClientSocket(self):
@@ -189,15 +136,32 @@ class oPop:
 
 
 	def stop_client_thread(self, client_ip):
-		"""Encerra a thread de envio de frames de um cliente específico."""
+		"""Encerra todas as threads associadas a um cliente específico."""
 		if client_ip in self.client_threads:
-			thread = self.client_threads[client_ip]
-			if thread.is_alive():
-				print(f"[DEBUG] Encerrando thread de envio para {client_ip}.")
-				self.clients_status[client_ip]["status"] = "pausado"  
-				thread.join(timeout=1)  
-				print(f"[DEBUG] Thread para {client_ip} encerrada.")
-			self.client_threads.pop(client_ip, None) 
+			threads = self.client_threads[client_ip]
+			for thread in threads:
+				if thread and thread.is_alive():
+					print(f"[DEBUG] Encerrando thread {thread.name} para {client_ip}.")
+					self.clients_status[client_ip]["status"] = "pausado"  # Atualiza status do cliente
+					thread.join(timeout=1)  # Aguarda o término da thread
+					print(f"[DEBUG] Thread {thread.name} para {client_ip} encerrada.")
+			# Limpa todas as threads do cliente após encerrar
+			self.client_threads.pop(client_ip, None)
+			print(f"[DEBUG] Todas as threads para {client_ip} foram encerradas.")
+		else:
+			print(f"[DEBUG] Nenhuma thread ativa para {client_ip}.")
+
+
+		# Caso o cliente tenha outra thread (como de resumir transmissão), também a encerre
+		if "resume_thread" in self.clients_status.get(client_ip, {}):
+			resume_thread = self.clients_status[client_ip].get("resume_thread")
+			if resume_thread and resume_thread.is_alive():
+				print(f"[DEBUG] Encerrando thread de resumo para {client_ip}.")
+				self.clients_status[client_ip]["status"] = "pausado"
+				resume_thread.join(timeout=1)  # Aguarda o término da thread
+				print(f"[DEBUG] Thread de resumo para {client_ip} encerrada.")
+			self.clients_status[client_ip].pop("resume_thread", None)  # Remove a referência
+
 
 	def start_sending_frames(self, filename, client_ip, start_frame=0):
 		"""Cria e inicia uma thread para enviar frames para um cliente."""
@@ -205,14 +169,18 @@ class oPop:
 			print(f"[DEBUG] Cliente {client_ip} já possui uma thread ativa.")
 			return
 
+		if client_ip not in self.client_threads:
+			self.client_threads[client_ip] = []
+
 		# Criar e iniciar a thread
 		thread = threading.Thread(
 			target=self.send_frames_from_cache,
 			args=(filename, client_ip, start_frame),
 		)
 		thread.daemon = True  # Finalizar com o processo principal
-		self.client_threads[client_ip] = thread  # Salvar a thread no dicionário
 		thread.start()
+
+		self.client_threads[client_ip].append(thread)
 		print(f"[DEBUG] Thread iniciada para envio de {filename} ao cliente {client_ip}.")
 
 
@@ -232,7 +200,14 @@ class oPop:
 					if clientIP in self.clients_status:
 						self.clients_status[clientIP]["status"] = "ativo"
 						self.clients_status[clientIP]["pause_event"].set()  # Retomar transmissão
-						print(f"[PLAY] Retomando transmissão para {clientIP}.")
+						if clientIP not in self.client_threads or not any(t.is_alive() for t in self.client_threads[clientIP]):
+							start_frame = data.get("frame_number", 0)  # Obtém o frame de início do comando PLAY
+							filename = self.clients_status[clientIP]["filename"]
+							
+							print(f"[PLAY] Iniciando nova thread para {clientIP} no frame {start_frame}.")
+							self.start_sending_frames(filename, clientIP, start_frame)
+						else:
+							print(f"[PLAY] Transmissão já ativa para {clientIP}.")
 
 				elif command == "PAUSE":
 					if clientIP in self.clients_status:
